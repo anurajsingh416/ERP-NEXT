@@ -9,7 +9,14 @@ import {
   HiPuzzle, HiViewGrid, HiUser, HiDocumentText, HiOutlineOfficeBuilding,
   HiCube, HiShoppingCart, HiCog, HiMenu, HiX, HiHome, HiBell, HiCreditCard,
 } from "react-icons/hi";
-import { FiArrowLeft, FiEye, FiEyeOff } from "react-icons/fi";
+import { FiArrowLeft, FiEye, FiEyeOff,  FiLayers,
+  FiFileText,
+  FiCalendar,
+  FiUsers,
+  FiCheck,
+  FiList,
+  FiTool,
+  FiDollarSign,FiTruck , } from "react-icons/fi";
 import { GiStockpiles } from "react-icons/gi";
 import { SiCivicrm } from "react-icons/si";
 import LogoutButton from "@/components/LogoutButton";
@@ -636,8 +643,110 @@ export default function Layout({ children }) {
                 </Section>
                 <Section title="Billing" icon={<HiCreditCard />} isOpen={openMenu === "billing"} onToggle={() => toggleMenu("billing")}>
                   <SidebarItem href="/admin/billing" icon={<HiOutlineOfficeBuilding />} label="Plans" onClick={closeSidebar} isActive={isActive("/admin/billing/plans")} />
-             
+              
                 </Section>
+
+               
+                  {/* <Section title="Engineering" icon={<HiViewGrid />} isOpen={openMenu === "engneering"} onToggle={() => toggleMenu("engneering")}>
+                <SidebarItem href="/admin/Engineering/projects"  icon={<HiOutlineOfficeBuilding />} label="Project"  onClick={closeSidebar} isActive={isActive("/admin/Engineering/projects")} />
+                <SidebarItem href="/admin/Engineering/Boq"    icon={<HiOutlineCube />}           label="BOQ"    onClick={closeSidebar} isActive={isActive("/admin/Engineering/Boq")} />
+                <SidebarItem href="/admin/Engineering/DPR" icon={<HiPuzzle />}                label="DPR" onClick={closeSidebar} isActive={isActive("/admin/Engineering/DPR")} />
+                <SidebarItem href="/admin/Engineering/Workorder" icon={<HiPuzzle />}                label="Workorder" onClick={closeSidebar} isActive={isActive("/admin/Engineering/Workorder")} />
+                </Section> */}
+                
+                 <Section
+  title="Constructions"
+  icon={<HiViewGrid />}
+  isOpen={openMenu === "constructions"}
+  onToggle={() => toggleMenu("constructions")}
+>
+  <SidebarItem
+    href="/admin/construction/projects"
+    icon={<FiLayers />}
+    label="Projects"
+    onClick={closeSidebar}
+    isActive={isActive("/admin/construction/projects")}
+  />
+  <SidebarItem
+    href="/admin/construction/boq"
+    icon={<FiFileText />}
+    label="BOQ"
+    onClick={closeSidebar}
+    isActive={isActive("/admin/construction/boq")}
+  />
+  <SidebarItem
+    href="/admin/construction/daily-report"
+    icon={<FiCalendar />}
+    label="DPR"
+    onClick={closeSidebar}
+    isActive={isActive("/admin/construction/daily-report")}
+  />
+  <SidebarItem
+    href="/admin/construction/labour"
+    icon={<FiUsers />}
+    label="Labour"
+    onClick={closeSidebar}
+    isActive={isActive("/admin/construction/labour")}
+  />
+  <SidebarItem
+    href="/admin/construction/attendance"
+    icon={<FiCheck />}
+    label="Attendance"
+    onClick={closeSidebar}
+    isActive={isActive("/admin/construction/attendance")}
+  />
+  <SidebarItem
+    href="/admin/construction/work-assignment"
+    icon={<FiList />}
+    label="Work Assignments"
+    onClick={closeSidebar}
+    isActive={isActive("/admin/construction/work-assignment")}
+  />
+  <SidebarItem
+    href="/admin/construction/labour-work"
+    icon={<FiTool />}
+    label="Labour Work"
+    onClick={closeSidebar}
+    isActive={isActive("/admin/construction/labour-work")}
+  />
+  <SidebarItem
+    href="/admin/construction/progress-billing"
+    icon={<FiDollarSign />}
+    label="Progress Billing"
+    onClick={closeSidebar}
+    isActive={isActive("/admin/construction/progress-billing")}
+  />
+  <SidebarItem
+    href="/admin/construction/reports"
+    icon={<FiTool />}
+    label="Reports"
+    onClick={closeSidebar}
+    isActive={isActive("/admin/construction/reports")}
+  />
+  <SidebarItem
+    href="/admin/construction/purchase-indent"
+    icon={<FiDollarSign />}
+    label="Purchase Indent"
+    onClick={closeSidebar}
+    isActive={isActive("/admin/construction/purchase-indent")}
+  />
+  <SidebarItem
+    href="/admin/construction/work-orders"
+    icon={<FiList />}
+    label="Work Orders"
+    onClick={closeSidebar}
+    isActive={isActive("/admin/construction/work-orders")}
+  />
+  <SidebarItem
+    href="/admin/construction/stock-transfers"
+    icon={<FiTruck />}
+    label="Stock Transfers"
+    onClick={closeSidebar}
+    isActive={isActive("/admin/construction/stock-transfers")}
+  />
+
+</Section>
+                
               </>
             )}
 
