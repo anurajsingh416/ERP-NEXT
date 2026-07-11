@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import dbConnect from "@/lib/db";
 import Project from "@/models/project/ProjectModel";
+import CustomerModel from "@/models/CustomerModel";
 import CompanyUser from "@/models/CompanyUser";
 import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
 
