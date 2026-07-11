@@ -16,6 +16,7 @@ import { FiArrowLeft, FiEye, FiEyeOff,  FiLayers,
   FiCheck,
   FiList,
   FiTool,
+  FiBox,
   FiDollarSign,FiTruck , } from "react-icons/fi";
 import { GiStockpiles } from "react-icons/gi";
 import { SiCivicrm } from "react-icons/si";
@@ -673,6 +674,13 @@ export default function Layout({ children }) {
     label="BOQ"
     onClick={closeSidebar}
     isActive={isActive("/admin/construction/boq")}
+  />
+  <SidebarItem
+    href="/admin/construction/tenders"
+    icon={<FiBox />}
+    label="Tender"
+    onClick={closeSidebar}
+    isActive={isActive("/admin/construction/tenders")}
   />
   <SidebarItem
     href="/admin/construction/daily-report"
