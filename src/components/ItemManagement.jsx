@@ -268,8 +268,8 @@ function InfoCard({ label, value, statusBadge, highlight }) {
       {statusBadge ? (
         <span
           className={`text-[11px] font-bold px-2 py-0.5 rounded-full w-fit ${value.toLowerCase() === "active"
-              ? "bg-emerald-100 text-emerald-700"
-              : "bg-red-100 text-red-600"
+            ? "bg-emerald-100 text-emerald-700"
+            : "bg-red-100 text-red-600"
             }`}
         >
           {value}
@@ -324,6 +324,9 @@ function ViewItemModal({ item, onClose }) {
                 src={item.imageUrl}
                 alt={item.itemName}
                 className="w-12 h-12 object-cover rounded-xl border border-gray-200 bg-white shrink-0 mt-0.5"
+                onError={(e) => {
+                  e.target.style.display = 'none'; // Hide broken image if path is invalid
+                }}
               />
             ) : (
               <div className="w-12 h-12 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0 mt-0.5">
@@ -342,18 +345,18 @@ function ViewItemModal({ item, onClose }) {
                 )}
                 <span
                   className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${item.itemType === "Raw Material"
-                      ? "bg-amber-100 text-amber-800"
-                      : item.itemType === "Product"
-                        ? "bg-blue-100 text-blue-700"
-                        : "bg-purple-100 text-purple-700"
+                    ? "bg-amber-100 text-amber-800"
+                    : item.itemType === "Product"
+                      ? "bg-blue-100 text-blue-700"
+                      : "bg-purple-100 text-purple-700"
                     }`}
                 >
                   {item.itemType || "Product"}
                 </span>
                 <span
                   className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${item.status === "active"
-                      ? "bg-emerald-100 text-emerald-700"
-                      : "bg-red-100 text-red-600"
+                    ? "bg-emerald-100 text-emerald-700"
+                    : "bg-red-100 text-red-600"
                     }`}
                 >
                   {item.status || "active"}
