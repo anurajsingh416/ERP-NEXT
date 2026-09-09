@@ -52,22 +52,34 @@ async function validateUser(req) {
 ======================================== */
 export async function GET(req, { params }) {
   await dbConnect();
-  const { user, error, status } = await validateUser(req);
-  if (error) return NextResponse.json({ success: false, message: error }, { status });
-
-  const { id } = params;
-  if (!id) return NextResponse.json({ success: false, message: "Item ID is required" }, { status: 400 });
 
   try {
-    const item = await Item.findOne({ _id: id, companyId: user.companyId });
-    if (!item) {
-      return NextResponse.json({ success: false, message: "Item not found" }, { status: 404 });
+    const { id } = params;
+
+    // Fetch the Finished Good and populate linked Raw Materials
+    const finishedProduct = await Item.findById(id)
+      .populate({
+        path: "rawMaterials.rawMaterialId",
+        select: "itemCode itemName uom unitPrice quantity stockQuantity",
+      })
+      .lean();
+
+    if (!finishedProduct) {
+      return NextResponse.json(
+        { success: false, message: "Item not found" },
+        { status: 404 }
+      );
     }
 
-    return NextResponse.json({ success: true, data: item }, { status: 200 });
+    return NextResponse.json({
+      success: true,
+      data: finishedProduct,
+    });
   } catch (err) {
-    console.error("GET /item/:id error:", err);
-    return NextResponse.json({ success: false, message: "Failed to fetch item" }, { status: 500 });
+    return NextResponse.json(
+      { success: false, message: err.message },
+      { status: 500 }
+    );
   }
 }
 

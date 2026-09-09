@@ -10,7 +10,7 @@ import {
   FaDownload, FaExclamationCircle, FaBoxOpen, FaTag,
   FaShieldAlt, FaCashRegister, FaRuler, FaClipboardCheck,
   FaListUl, FaQrcode, FaTimes, FaKeyboard, FaCamera,
-  FaCheckCircle, FaSpinner, FaImage, FaCloudUploadAlt,FaEye,
+  FaCheckCircle, FaSpinner, FaImage, FaCloudUploadAlt, FaEye,
   FaPalette, FaRulerCombined, FaMinus
 } from "react-icons/fa";
 import { HiOutlineDocumentText } from "react-icons/hi";
@@ -19,17 +19,17 @@ import { toast } from "react-toastify";
 
 // ── 7 Steps (added Variants) ──
 const STEPS = [
-  { id: 1, label: "Basic Info",   icon: FaBoxOpen },
-  { id: 2, label: "Tax & GST",    icon: HiOutlineDocumentText },
-  { id: 3, label: "Variants",     icon: FaListUl },
+  { id: 1, label: "Basic Info", icon: FaBoxOpen },
+  { id: 2, label: "Tax & GST", icon: HiOutlineDocumentText },
+  { id: 3, label: "Variants", icon: FaListUl },
   { id: 4, label: "POS Settings", icon: FaCashRegister },
-  { id: 5, label: "Quality",      icon: FaShieldAlt },
-  { id: 6, label: "Dimensions",   icon: FaRuler },
-  { id: 7, label: "Review",       icon: FaClipboardCheck },
+  { id: 5, label: "Quality", icon: FaShieldAlt },
+  { id: 6, label: "Dimensions", icon: FaRuler },
+  { id: 7, label: "Review", icon: FaClipboardCheck },
 ];
 
 const INITIAL = {
-  itemCode: "", itemName: "", description: "", category: "",
+  itemCode: "", itemName: "", serialNumber: "", description: "", category: "",
   unitPrice: "", quantity: "", reorderLevel: "", leadTime: "",
   itemType: "", uom: "", managedBy: "", managedValue: "",
   batchNumber: "", expiryDate: "", manufacturer: "",
@@ -52,16 +52,49 @@ const INITIAL = {
 const VALIDATORS = {
   1: (d) => {
     const e = {};
-    if (!d.itemName?.trim()) e.itemName  = "Item Name is required";
-    if (!d.category?.trim()) e.category  = "Category is required";
-    if (!d.unitPrice)        e.unitPrice = "Unit Price is required";
+    if (!d.itemName?.trim()) e.itemName = "Item Name is required";
+    if (!d.category?.trim()) e.category = "Category is required";
+    if (!d.unitPrice) e.unitPrice = "Unit Price is required";
     if (d.quantity === "" || d.quantity === undefined) e.quantity = "Minimum Stock is required";
-    if (!d.uom)     e.uom     = "Unit of Measure is required";
+    if (!d.uom) e.uom = "Unit of Measure is required";
     if (!d.itemType) e.itemType = "Item Type is required";
     return e;
   },
   2: () => ({}), 3: () => ({}), 4: () => ({}), 5: () => ({}), 6: () => ({}), 7: () => ({}),
 };
+
+// ─── Inline Read More Component for Item Names ──────────────────────────────
+function TruncatedItemCell({ text = "", manufacturer = "", limit = 75 }) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (!text || text.length <= limit) {
+    return (
+      <div>
+        <p className="font-semibold text-gray-900 text-sm leading-snug">{text}</p>
+        {manufacturer && <p className="text-xs text-gray-400 mt-0.5">{manufacturer}</p>}
+      </div>
+    );
+  }
+
+  return (
+    <div className="leading-snug">
+      <p className="font-semibold text-gray-900 text-sm inline">
+        {expanded ? text : `${text.slice(0, limit)}... `}
+      </p>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setExpanded((prev) => !prev);
+        }}
+        className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 ml-1.5 underline cursor-pointer inline-block"
+      >
+        {expanded ? "Show less" : "Read more"}
+      </button>
+      {manufacturer && <p className="text-xs text-gray-400 mt-0.5">{manufacturer}</p>}
+    </div>
+  );
+}
 
 // ════════════════════════════════════════
 // IMAGE UPLOAD COMPONENT (unchanged, but used for variant images)
@@ -225,141 +258,242 @@ function ImageUpload({ imageUrl, onImageChange, disabled }) {
 // ═══════════════════════════════════════════════════════════════════════════
 // VIEW MODAL – new component for read-only details
 // ═══════════════════════════════════════════════════════════════════════════
-function InfoCard({ label, value, statusBadge }) {
+// ─── Compact Info Card Helper ──────────────────────────────────────────────
+function InfoCard({ label, value, statusBadge, highlight }) {
+  if (value === undefined || value === null || value === "" || value === "—") return null;
+
   return (
-    <div className="bg-gray-50 rounded-lg p-2">
-      <p className="text-[9px] font-bold uppercase text-gray-400">{label}</p>
+    <div className="bg-gray-50/80 border border-gray-100 rounded-xl p-2.5 flex flex-col justify-between">
+      <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">{label}</p>
       {statusBadge ? (
-        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${value === "Active" ? "bg-emerald-100 text-emerald-600" : "bg-red-100 text-red-500"}`}>
-          {value || "—"}
+        <span
+          className={`text-[11px] font-bold px-2 py-0.5 rounded-full w-fit ${value.toLowerCase() === "active"
+              ? "bg-emerald-100 text-emerald-700"
+              : "bg-red-100 text-red-600"
+            }`}
+        >
+          {value}
         </span>
       ) : (
-        <p className="text-sm font-semibold text-gray-800">{value !== undefined && value !== null ? value : "—"}</p>
+        <p
+          className={`text-xs font-bold leading-snug break-words ${highlight ? "text-indigo-600 font-mono text-sm" : "text-gray-800"
+            }`}
+        >
+          {value}
+        </p>
       )}
     </div>
   );
 }
 
+// ─── Streamlined View Item Modal ───────────────────────────────────────────
 function ViewItemModal({ item, onClose }) {
   if (!item) return null;
 
-  const fmtINR = (num) => `₹${Number(num || 0).toLocaleString("en-IN")}`;
+  const fmtINR = (num) =>
+    `₹${Number(num || 0).toLocaleString("en-IN", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+
+  const effectivePrice =
+    item.totalAmount ||
+    item.unitPrice ||
+    (Number(item.unitRateSupply || 0) + Number(item.unitRateInstallation || 0));
+
+  const isLongName = (item.itemName || "").length > 80;
+  const isDescIdentical =
+    item.description &&
+    item.itemName &&
+    item.description.trim().toLowerCase() === item.itemName.trim().toLowerCase();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)" }}>
-      <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-3">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] shadow-2xl flex flex-col overflow-hidden border border-gray-100 animate-in fade-in zoom-in-95 duration-150"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Modal Header */}
+        <div className="px-6 py-4 border-b border-gray-100 bg-slate-50/70 flex items-start justify-between gap-4 shrink-0">
+          <div className="flex items-start gap-3 min-w-0">
             {item.imageUrl ? (
-              <img src={item.imageUrl} alt={item.itemName} className="w-10 h-10 object-cover rounded-lg border" />
+              <img
+                src={item.imageUrl}
+                alt={item.itemName}
+                className="w-12 h-12 object-cover rounded-xl border border-gray-200 bg-white shrink-0 mt-0.5"
+              />
             ) : (
-              <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center">
-                <FaBoxOpen className="text-indigo-500" />
+              <div className="w-12 h-12 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0 mt-0.5">
+                <FaBoxOpen size={20} />
               </div>
             )}
-            <div>
-              <h3 className="text-lg font-bold text-gray-900">{item.itemName || "—"}</h3>
-              <p className="text-xs text-gray-400 font-mono">{item.itemCode || "—"}</p>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap mb-1">
+                <span className="font-mono text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md">
+                  {item.itemCode || "NO-CODE"}
+                </span>
+                {item.serialNumber && (
+                  <span className="font-mono text-[11px] font-semibold text-slate-700 bg-slate-200/70 px-2 py-0.5 rounded-md">
+                    Sr. {item.serialNumber}
+                  </span>
+                )}
+                <span
+                  className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${item.itemType === "Raw Material"
+                      ? "bg-amber-100 text-amber-800"
+                      : item.itemType === "Product"
+                        ? "bg-blue-100 text-blue-700"
+                        : "bg-purple-100 text-purple-700"
+                    }`}
+                >
+                  {item.itemType || "Product"}
+                </span>
+                <span
+                  className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${item.status === "active"
+                      ? "bg-emerald-100 text-emerald-700"
+                      : "bg-red-100 text-red-600"
+                    }`}
+                >
+                  {item.status || "active"}
+                </span>
+              </div>
+
+              {/* Clamp header title if long so it never pushes the modal down */}
+              <h3
+                className={`font-bold text-gray-900 leading-snug ${isLongName ? "text-sm line-clamp-2" : "text-base"
+                  }`}
+                title={item.itemName}
+              >
+                {item.itemName || "Unnamed Item"}
+              </h3>
             </div>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center">
-            <FaTimes />
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-8 h-8 rounded-full bg-white border border-gray-200 text-gray-400 hover:text-gray-700 hover:bg-gray-100 flex items-center justify-center shrink-0 transition-colors"
+          >
+            <FaTimes size={13} />
           </button>
         </div>
 
-        {/* Body */}
-        <div className="p-6 space-y-5">
-          {/* Basic Info */}
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        {/* Modal Body */}
+        <div className="p-6 overflow-y-auto space-y-5">
+          {/* Full Item Name / Scope (Expanded text block for tender paragraphs) */}
+          {isLongName && (
+            <div className="bg-slate-50 border border-slate-200/70 rounded-2xl p-4">
+              <p className="text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1.5">
+                Full Specification & Scope of Work
+              </p>
+              <p className="text-xs text-slate-800 leading-relaxed whitespace-pre-line font-medium">
+                {item.itemName}
+              </p>
+            </div>
+          )}
+
+          {/* Key Specs Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <InfoCard label="Total / Rate" value={fmtINR(effectivePrice)} highlight />
+            <InfoCard label="UOM" value={item.uom || item.unit} />
+            <InfoCard label="Quantity / Min Stock" value={item.quantity} />
             <InfoCard label="Category" value={item.category} />
-            <InfoCard label="Type" value={item.itemType} />
-            <InfoCard label="Status" value={item.status === "active" ? "Active" : "Inactive"} statusBadge />
-            <InfoCard label="Unit Price" value={item.unitPrice ? fmtINR(item.unitPrice) : "—"} />
-            <InfoCard label="Min. Stock" value={item.quantity} />
-            <InfoCard label="UOM" value={item.uom} />
             <InfoCard label="Reorder Level" value={item.reorderLevel} />
-            <InfoCard label="Lead Time" value={item.leadTime ? `${item.leadTime} days` : "—"} />
+            <InfoCard label="Lead Time" value={item.leadTime ? `${item.leadTime} Days` : null} />
             <InfoCard label="Manufacturer" value={item.manufacturer} />
+            <InfoCard label="Batch No." value={item.batchNumber} />
           </div>
 
-          {item.description && (
-            <div>
-              <h4 className="text-xs font-bold uppercase text-gray-400 mb-1">Description</h4>
-              <p className="text-sm text-gray-700">{item.description}</p>
+          {/* Rate Breakdown (Only if supply/install rates exist) */}
+          {(item.unitRateSupply > 0 || item.unitRateInstallation > 0) && (
+            <div className="border border-indigo-100 bg-indigo-50/40 rounded-2xl p-4">
+              <p className="text-[10px] font-black uppercase tracking-wider text-indigo-400 mb-2.5">
+                Cost Breakdown
+              </p>
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div className="bg-white rounded-xl p-2 border border-indigo-100/80">
+                  <p className="text-[10px] text-gray-400 font-bold uppercase">Supply Rate</p>
+                  <p className="text-xs font-mono font-bold text-gray-800 mt-0.5">
+                    {fmtINR(item.unitRateSupply)}
+                  </p>
+                </div>
+                <div className="bg-white rounded-xl p-2 border border-indigo-100/80">
+                  <p className="text-[10px] text-gray-400 font-bold uppercase">Install Rate</p>
+                  <p className="text-xs font-mono font-bold text-gray-800 mt-0.5">
+                    {fmtINR(item.unitRateInstallation)}
+                  </p>
+                </div>
+                <div className="bg-white rounded-xl p-2 border border-indigo-100/80">
+                  <p className="text-[10px] text-indigo-500 font-bold uppercase">Combined</p>
+                  <p className="text-xs font-mono font-black text-indigo-700 mt-0.5">
+                    {fmtINR(item.totalAmount || effectivePrice)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Distinct Technical Description (Render only if different from itemName) */}
+          {item.description && !isDescIdentical && (
+            <div className="border border-gray-200/80 rounded-2xl p-4">
+              <p className="text-[10px] font-black uppercase tracking-wider text-gray-400 mb-1.5">
+                Technical Notes / Description
+              </p>
+              <p className="text-xs text-gray-700 leading-relaxed whitespace-pre-line">
+                {item.description}
+              </p>
             </div>
           )}
 
           {/* Dimensions */}
           {(item.length || item.width || item.height || item.weight) && (
-            <div>
-              <h4 className="text-xs font-bold uppercase text-gray-400 mb-2">Dimensions</h4>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {item.length && <InfoCard label="Length (cm)" value={item.length} />}
-                {item.width && <InfoCard label="Width (cm)" value={item.width} />}
-                {item.height && <InfoCard label="Height (cm)" value={item.height} />}
-                {item.weight && <InfoCard label="Weight (kg)" value={item.weight} />}
+            <div className="border border-gray-200/80 rounded-2xl p-4">
+              <p className="text-[10px] font-black uppercase tracking-wider text-gray-400 mb-2">
+                Physical Dimensions
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                {item.length && <div><span className="text-gray-400">L:</span> <strong className="text-gray-700">{item.length} cm</strong></div>}
+                {item.width && <div><span className="text-gray-400">W:</span> <strong className="text-gray-700">{item.width} cm</strong></div>}
+                {item.height && <div><span className="text-gray-400">H:</span> <strong className="text-gray-700">{item.height} cm</strong></div>}
+                {item.weight && <div><span className="text-gray-400">Weight:</span> <strong className="text-gray-700">{item.weight} kg</strong></div>}
               </div>
             </div>
           )}
 
-          {/* Tax */}
-          <div>
-            <h4 className="text-xs font-bold uppercase text-gray-400 mb-2">Tax</h4>
-            <div className="grid grid-cols-2 gap-3">
-              <InfoCard label="GST" value={item.includeGST ? `${item.gstRate || 0}%` : "Not applicable"} />
-              <InfoCard label="IGST" value={item.includeIGST ? `${item.igstRate || 0}%` : "Not applicable"} />
-            </div>
-          </div>
-
-          {/* POS Settings */}
-          {item.posEnabled && (
-            <div>
-              <h4 className="text-xs font-bold uppercase text-gray-400 mb-2">POS Settings</h4>
-              <div className="grid grid-cols-2 gap-3">
-                <InfoCard label="Barcode" value={item.posConfig?.barcode || "—"} />
-                <InfoCard label="POS Price" value={item.posConfig?.posPrice ? fmtINR(item.posConfig.posPrice) : fmtINR(item.unitPrice)} />
-                <InfoCard label="Allow Discount" value={item.posConfig?.allowDiscount ? "Yes" : "No"} />
-                <InfoCard label="Taxable" value={item.posConfig?.taxableInPOS ? "Yes" : "No"} />
+          {/* Tax / GST Details */}
+          {(item.includeGST || item.includeIGST) && (
+            <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-3.5 flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2">
+                <span className="text-gray-400 font-bold uppercase text-[10px]">Taxation:</span>
+                {item.includeGST && (
+                  <span className="bg-white border border-gray-200 px-2 py-0.5 rounded-md font-semibold text-gray-700">
+                    GST {item.gstRate || 0}%
+                  </span>
+                )}
+                {item.includeIGST && (
+                  <span className="bg-white border border-gray-200 px-2 py-0.5 rounded-md font-semibold text-gray-700">
+                    IGST {item.igstRate || 0}%
+                  </span>
+                )}
               </div>
-            </div>
-          )}
-
-          {/* Variants */}
-          {item.variants && item.variants.length > 0 && (
-            <div>
-              <h4 className="text-xs font-bold uppercase text-gray-400 mb-2">Variants ({item.variants.length})</h4>
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {item.variants.map((v, i) => (
-                  <div key={i} className="border border-gray-200 rounded-lg p-3 bg-gray-50">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <span className="font-mono text-xs font-bold text-indigo-600">{v.sku || `Variant ${i+1}`}</span>
-                        {Object.keys(v.attributes || {}).length > 0 && (
-                          <div className="text-xs text-gray-500 mt-1">
-                            {Object.entries(v.attributes).map(([k, val]) => `${k}: ${val}`).join(" · ")}
-                          </div>
-                        )}
-                      </div>
-                      {v.imageUrl && (
-                        <img src={v.imageUrl} alt="variant" className="w-10 h-10 object-cover rounded border" />
-                      )}
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 mt-2 text-sm">
-                      <span><strong>Price:</strong> {v.price ? fmtINR(v.price) : fmtINR(item.unitPrice)}</span>
-                      <span><strong>Stock:</strong> {v.quantity ?? 0}</span>
-                      {v.barcode && <span><strong>Barcode:</strong> {v.barcode}</span>}
-                    </div>
-                  </div>
-                ))}
-              </div>
+              {item.posEnabled && (
+                <span className="text-[10px] font-bold uppercase bg-orange-100 text-orange-700 px-2 py-0.5 rounded-md">
+                  POS Enabled
+                </span>
+              )}
             </div>
           )}
         </div>
 
-        {/* Footer */}
-        <div className="sticky bottom-0 bg-white border-t px-6 py-4 flex justify-end">
-          <button onClick={onClose} className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">
+        {/* Modal Footer */}
+        <div className="px-6 py-3.5 bg-gray-50 border-t border-gray-100 flex justify-end shrink-0">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-5 py-2 rounded-xl bg-gray-900 hover:bg-gray-800 text-white text-xs font-bold transition-colors"
+          >
             Close
           </button>
         </div>
@@ -369,23 +503,22 @@ function ViewItemModal({ item, onClose }) {
 }
 
 
-
 // ════════════════════════════════════════
 // QR SCANNER MODAL
 // ════════════════════════════════════════
 function QRScannerModal({ onScanSuccess, onManual, onClose }) {
-  const videoRef    = useRef(null);
-  const streamRef   = useRef(null);
-  const rafRef      = useRef(null);
-  const canvasRef   = useRef(null);
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const rafRef = useRef(null);
+  const canvasRef = useRef(null);
   const detectorRef = useRef(null);
-  const [scanning,   setScanning]   = useState(false);
-  const [camError,   setCamError]   = useState("");
+  const [scanning, setScanning] = useState(false);
+  const [camError, setCamError] = useState("");
   const [scanResult, setScanResult] = useState(null);
-  const [fetching,   setFetching]   = useState(false);
+  const [fetching, setFetching] = useState(false);
   const [manualCode, setManualCode] = useState("");
-  const [tab,        setTab]        = useState("camera");
-  const [libStatus,  setLibStatus]  = useState("idle");
+  const [tab, setTab] = useState("camera");
+  const [libStatus, setLibStatus] = useState("idle");
 
   const stopCamera = useCallback(() => {
     if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
@@ -397,14 +530,14 @@ function QRScannerModal({ onScanSuccess, onManual, onClose }) {
   }, []);
 
   const tickDetect = useCallback(async () => {
-    const video  = videoRef.current;
+    const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas || video.readyState < 2) {
       rafRef.current = requestAnimationFrame(tickDetect);
       return;
     }
 
-    canvas.width  = video.videoWidth  || 640;
+    canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
     const ctx = canvas.getContext("2d");
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
@@ -416,7 +549,7 @@ function QRScannerModal({ onScanSuccess, onManual, onClose }) {
           handleCodeDetected(codes[0].rawValue);
           return;
         }
-      } catch {}
+      } catch { }
     }
 
     if (window.jsQR) {
@@ -427,7 +560,7 @@ function QRScannerModal({ onScanSuccess, onManual, onClose }) {
           handleCodeDetected(code.data);
           return;
         }
-      } catch {}
+      } catch { }
     }
 
     rafRef.current = requestAnimationFrame(tickDetect);
@@ -462,7 +595,7 @@ function QRScannerModal({ onScanSuccess, onManual, onClose }) {
         setLibStatus("loading");
         const script = document.createElement("script");
         script.src = "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js";
-        script.onload  = () => setLibStatus("ready");
+        script.onload = () => setLibStatus("ready");
         script.onerror = () => setLibStatus("error");
         document.head.appendChild(script);
       } else {
@@ -475,8 +608,8 @@ function QRScannerModal({ onScanSuccess, onManual, onClose }) {
         err.name === "NotAllowedError"
           ? "Camera permission denied."
           : err.name === "NotFoundError"
-          ? "No camera found."
-          : `Camera error: ${err.message}`
+            ? "No camera found."
+            : `Camera error: ${err.message}`
       );
     }
   }, [tickDetect]);
@@ -523,7 +656,7 @@ function QRScannerModal({ onScanSuccess, onManual, onClose }) {
         setFetching(false);
         return;
       }
-    } catch {}
+    } catch { }
     try {
       const parsed = JSON.parse(code);
       if (parsed && (parsed.itemName || parsed.name)) {
@@ -532,7 +665,7 @@ function QRScannerModal({ onScanSuccess, onManual, onClose }) {
         setFetching(false);
         return;
       }
-    } catch {}
+    } catch { }
     onScanSuccess({ posConfig: { barcode: code } }, code);
     setFetching(false);
   }, [stopCamera, onScanSuccess]);
@@ -690,22 +823,28 @@ export default function ItemManagement() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [stats, setStats] = useState({ total: 0, product: 0, service: 0, rawMat: 0 });
-   // View modal state
+
+  // View modal state
   const [viewItem, setViewItem] = useState(null);
   const [viewModalOpen, setViewModalOpen] = useState(false);
+
   const fetchAllItemsForStats = async () => {
     try {
       const token = localStorage.getItem("token");
-      const res = await axios.get("/api/items?limit=1000", { headers: { Authorization: `Bearer ${token}` } });
+      const res = await axios.get("/api/items?limit=1000", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       if (res.data.success) {
         const all = res.data.data;
         const total = all.length;
-        const product = all.filter(i => i.itemType === "Product").length;
-        const service = all.filter(i => i.itemType === "Service").length;
-        const rawMat = all.filter(i => i.itemType === "Raw Material").length;
+        const product = all.filter((i) => i.itemType === "Product").length;
+        const service = all.filter((i) => i.itemType === "Service").length;
+        const rawMat = all.filter((i) => i.itemType === "Raw Material").length;
         setStats({ total, product, service, rawMat });
       }
-    } catch (err) { console.error(err); }
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   const fetchItems = useCallback(async () => {
@@ -718,7 +857,10 @@ export default function ItemManagement() {
         search: searchTerm,
         itemType: filterType === "All" ? "" : filterType,
       };
-      const res = await axios.get("/api/items", { params, headers: { Authorization: `Bearer ${token}` } });
+      const res = await axios.get("/api/items", {
+        params,
+        headers: { Authorization: `Bearer ${token}` },
+      });
       if (res.data.success) {
         setItems(res.data.data);
         setTotalPages(res.data.meta.pages);
@@ -752,35 +894,36 @@ export default function ItemManagement() {
   const generateCode = async () => {
     try {
       const token = localStorage.getItem("token");
-      const res = await axios.get("/api/lastItemCode", { headers: { Authorization: `Bearer ${token}` } });
+      const res = await axios.get("/api/lastItemCode", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const last = res.data.lastItemCode || "ITEM-0000";
       const num = parseInt(last.split("-")[1] || "0", 10) + 1;
-      setId(p => ({ ...p, itemCode: `ITEM-${String(num).padStart(4, "0")}` }));
-    } catch {}
+      setId((p) => ({ ...p, itemCode: `ITEM-${String(num).padStart(4, "0")}` }));
+    } catch { }
   };
-    // ✅ View function
- // Replace handleView with this:
-const handleView = async (itemId) => {
-  try {
-    const token = localStorage.getItem("token");
-    const res = await axios.get(`/api/items?id=${itemId}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    if (res.data.success) {
-      setViewItem(res.data.data);
-      setViewModalOpen(true);
-    } else {
-      toast.error("Failed to load item details");
+
+  const handleView = async (itemId) => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await axios.get(`/api/items?id=${itemId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.data.success) {
+        setViewItem(res.data.data);
+        setViewModalOpen(true);
+      } else {
+        toast.error("Failed to load item details");
+      }
+    } catch (err) {
+      toast.error("Error loading item");
+      console.error(err);
     }
-  } catch (err) {
-    toast.error("Error loading item");
-    console.error(err);
-  }
-};
+  };
 
   const handleScanSuccess = useCallback((scannedData, rawCode) => {
     setShowScanner(false);
-    setId(prev => ({
+    setId((prev) => ({
       ...INITIAL,
       ...prev,
       ...scannedData,
@@ -788,14 +931,18 @@ const handleView = async (itemId) => {
       includeGST: scannedData.gstRate ? true : prev.includeGST,
       includeIGST: scannedData.igstRate ? true : prev.includeIGST,
     }));
-    toast.success(scannedData.itemName ? `✓ Auto-filled: ${scannedData.itemName}` : `Barcode captured: ${rawCode} — please complete remaining fields`);
+    toast.success(
+      scannedData.itemName
+        ? `✓ Auto-filled: ${scannedData.itemName}`
+        : `Barcode captured: ${rawCode} — please complete remaining fields`
+    );
     setStep(1);
     setView("form");
   }, []);
 
   const handleCreateClick = async () => {
     await generateCode();
-    setId(p => ({ ...INITIAL, itemCode: p.itemCode }));
+    setId((p) => ({ ...INITIAL, itemCode: p.itemCode }));
     setStep(1);
     setErrs({});
     setShowScanner(true);
@@ -806,44 +953,61 @@ const handleView = async (itemId) => {
     setView("form");
   };
 
-  const clearErr = (k) => setErrs(p => { const n = { ...p }; delete n[k]; return n; });
+  const clearErr = (k) =>
+    setErrs((p) => {
+      const n = { ...p };
+      delete n[k];
+      return n;
+    });
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     if (name.startsWith("posConfig.")) {
       const key = name.split(".")[1];
-      setId(p => ({ ...p, posConfig: { ...(p.posConfig || {}), [key]: type === "checkbox" ? checked : value } }));
+      setId((p) => ({
+        ...p,
+        posConfig: { ...(p.posConfig || {}), [key]: type === "checkbox" ? checked : value },
+      }));
       return;
     }
-    if (type === "checkbox") { setId(p => ({ ...p, [name]: checked })); return; }
+    if (type === "checkbox") {
+      setId((p) => ({ ...p, [name]: checked }));
+      return;
+    }
     if (name === "gstRate") {
       const rate = parseFloat(value) || 0;
-      setId(p => ({ ...p, gstRate: value, cgstRate: rate / 2, sgstRate: rate / 2 }));
+      setId((p) => ({ ...p, gstRate: value, cgstRate: rate / 2, sgstRate: rate / 2 }));
       return;
     }
-    setId(p => ({ ...p, [name]: value }));
+    setId((p) => ({ ...p, [name]: value }));
     clearErr(name);
   };
 
   // Variant handlers
   const addVariant = () => {
-    setId(p => ({
+    setId((p) => ({
       ...p,
-      variants: [...(p.variants || []), { sku: "", attributes: {}, price: p.unitPrice, quantity: 0, imageUrl: "", barcode: "", posPrice: p.unitPrice }]
+      variants: [
+        ...(p.variants || []),
+        { sku: "", attributes: {}, price: p.unitPrice, quantity: 0, imageUrl: "", barcode: "", posPrice: p.unitPrice },
+      ],
     }));
   };
+
   const removeVariant = (idx) => {
-    setId(p => ({ ...p, variants: p.variants.filter((_, i) => i !== idx) }));
+    setId((p) => ({ ...p, variants: p.variants.filter((_, i) => i !== idx) }));
   };
+
   const updateVariant = (idx, field, value) => {
-    setId(p => {
+    setId((p) => {
       const variants = [...p.variants];
       variants[idx] = { ...variants[idx], [field]: value };
       return { ...p, variants };
     });
   };
+
   const updateVariantAttribute = (idx, attrKey, attrValue) => {
-    setId(p => {
+    setId((p) => {
       const variants = [...p.variants];
       const attrs = variants[idx].attributes || {};
       if (attrValue === "") delete attrs[attrKey];
@@ -852,9 +1016,10 @@ const handleView = async (itemId) => {
       return { ...p, variants };
     });
   };
+
   const addVariantAttribute = (idx, newKey, newVal) => {
     if (!newKey.trim()) return;
-    setId(p => {
+    setId((p) => {
       const variants = [...p.variants];
       const attrs = variants[idx].attributes || {};
       attrs[newKey.trim()] = newVal.trim();
@@ -865,22 +1030,51 @@ const handleView = async (itemId) => {
 
   const handleQCChange = (i, e) => {
     const { name, value } = e.target;
-    setId(p => { const q = [...p.qualityCheckDetails]; q[i] = { ...q[i], [name]: value }; return { ...p, qualityCheckDetails: q }; });
+    setId((p) => {
+      const q = [...p.qualityCheckDetails];
+      q[i] = { ...q[i], [name]: value };
+      return { ...p, qualityCheckDetails: q };
+    });
   };
-  const addQC = () => setId(p => ({ ...p, qualityCheckDetails: [...p.qualityCheckDetails, { srNo: "", parameter: "", min: "", max: "" }] }));
-  const removeQC = (i) => setId(p => ({ ...p, qualityCheckDetails: p.qualityCheckDetails.filter((_, j) => j !== i) }));
+
+  const addQC = () =>
+    setId((p) => ({
+      ...p,
+      qualityCheckDetails: [...p.qualityCheckDetails, { srNo: "", parameter: "", min: "", max: "" }],
+    }));
+
+  const removeQC = (i) =>
+    setId((p) => ({
+      ...p,
+      qualityCheckDetails: p.qualityCheckDetails.filter((_, j) => j !== i),
+    }));
 
   const goNext = () => {
     const v = VALIDATORS[step];
-    if (v) { const e = v(id); if (Object.keys(e).length) { setErrs(e); toast.error(Object.values(e)[0]); return; } }
+    if (v) {
+      const e = v(id);
+      if (Object.keys(e).length) {
+        setErrs(e);
+        toast.error(Object.values(e)[0]);
+        return;
+      }
+    }
     setErrs({});
-    setStep(s => s + 1);
+    setStep((s) => s + 1);
   };
-  const goPrev = () => { setErrs({}); setStep(s => s - 1); };
+
+  const goPrev = () => {
+    setErrs({});
+    setStep((s) => s - 1);
+  };
 
   const handleSubmit = async () => {
     const allE = VALIDATORS[1](id);
-    if (Object.keys(allE).length) { setErrs(allE); toast.error("Fix required fields"); return; }
+    if (Object.keys(allE).length) {
+      setErrs(allE);
+      toast.error("Fix required fields");
+      return;
+    }
     setSubmitting(true);
     const token = localStorage.getItem("token");
     const toNum = (v) => (v === "" || v == null ? undefined : Number(v));
@@ -903,12 +1097,13 @@ const handleView = async (itemId) => {
       posConfig: {
         ...id.posConfig,
         posPrice: toNum(id.posConfig?.posPrice),
-        maxDiscountPercent: id.posConfig?.maxDiscountPercent === "" ? 100 : Number(id.posConfig?.maxDiscountPercent ?? 100),
+        maxDiscountPercent:
+          id.posConfig?.maxDiscountPercent === "" ? 100 : Number(id.posConfig?.maxDiscountPercent ?? 100),
         allowDiscount: id.posConfig?.allowDiscount ?? true,
         taxableInPOS: id.posConfig?.taxableInPOS ?? true,
         showInPOS: id.posConfig?.showInPOS ?? true,
       },
-      variants: (id.variants || []).map(v => ({
+      variants: (id.variants || []).map((v) => ({
         ...v,
         price: toNum(v.price),
         quantity: toNum(v.quantity) || 0,
@@ -917,40 +1112,66 @@ const handleView = async (itemId) => {
     };
     try {
       if (id._id) {
-        const res = await axios.put(`/api/items/${id._id}`, payload, { headers: { Authorization: `Bearer ${token}` } });
-        if (res.data.success) { toast.success("Item updated!"); refreshData(); }
-        else toast.error(res.data.message || "Update failed");
+        const res = await axios.put(`/api/items/${id._id}`, payload, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.data.success) {
+          toast.success("Item updated!");
+          refreshData();
+        } else toast.error(res.data.message || "Update failed");
       } else {
-        const res = await axios.post("/api/items", payload, { headers: { Authorization: `Bearer ${token}` } });
-        if (res.data.success) { toast.success("Item created!"); refreshData(); }
-        else toast.error(res.data.message || "Create failed");
+        const res = await axios.post("/api/items", payload, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.data.success) {
+          toast.success("Item created!");
+          refreshData();
+        } else toast.error(res.data.message || "Create failed");
       }
       reset();
-    } catch (err) { toast.error(err.response?.data?.message || "Something went wrong"); }
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Something went wrong");
+    }
     setSubmitting(false);
   };
 
-  const reset = () => { setId({ ...INITIAL }); setStep(1); setErrs({}); setView("list"); setCurrentPage(1); };
+  const reset = () => {
+    setId({ ...INITIAL });
+    setStep(1);
+    setErrs({});
+    setView("list");
+    setCurrentPage(1);
+  };
+
   const handleEdit = async (item) => {
     try {
       const token = localStorage.getItem("token");
-      const res = await axios.get(`/api/items?id=${item._id}`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await axios.get(`/api/items?id=${item._id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       if (res.data.success) {
         setId({ ...res.data.data, variants: res.data.data.variants || [] });
         setStep(1);
         setErrs({});
         setView("form");
       } else toast.error("Failed to load item details");
-    } catch { toast.error("Error loading item"); }
+    } catch {
+      toast.error("Error loading item");
+    }
   };
+
   const handleDelete = async (itemId) => {
     if (!confirm("Delete this item?")) return;
     try {
       const token = localStorage.getItem("token");
-      await axios.delete(`/api/items/${itemId}`, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.delete(`/api/items/${itemId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       toast.success("Item deleted");
       refreshData();
-    } catch { toast.error("Delete failed"); }
+    } catch {
+      toast.error("Delete failed");
+    }
   };
 
   const downloadTemplate = async () => {
@@ -958,353 +1179,1168 @@ const handleView = async (itemId) => {
       const res = await fetch("/api/items/template");
       if (!res.ok) throw new Error();
       const blob = await res.blob();
-      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "item_template.csv"; a.click();
-    } catch { toast.error("Error downloading template"); }
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "item_template.csv";
+      a.click();
+    } catch {
+      toast.error("Error downloading template");
+    }
   };
 
   const handleBulk = async (e) => {
-    const file = e.target.files[0]; if (!file) return;
+    const file = e.target.files[0];
+    if (!file) return;
     setUploading(true);
     try {
       const token = localStorage.getItem("token");
       const text = await file.text();
-      const lines = text.split("\n").filter(l => l.trim());
-      const hdrs = lines[0].split(",").map(h => h.trim());
-      const jsonData = lines.slice(1).map(line => { const v = line.split(","); const o = {}; hdrs.forEach((k, i) => (o[k] = v[i]?.trim() || "")); return o; });
-      const res = await axios.post("/api/items/bulk", { items: jsonData }, { headers: { Authorization: `Bearer ${token}` } });
+      const lines = text.split("\n").filter((l) => l.trim());
+      const hdrs = lines[0].split(",").map((h) => h.trim());
+      const jsonData = lines.slice(1).map((line) => {
+        const v = line.split(",");
+        const o = {};
+        hdrs.forEach((k, i) => (o[k] = v[i]?.trim() || ""));
+        return o;
+      });
+      const res = await axios.post(
+        "/api/items/bulk",
+        { items: jsonData },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
       const { success, results } = res.data;
       if (success) {
-        const cr = results.filter(r => r.success && r.action === "created").length;
-        const up = results.filter(r => r.success && r.action === "updated").length;
-        const sk = results.filter(r => !r.success).length;
+        const cr = results.filter((r) => r.success && r.action === "created").length;
+        const up = results.filter((r) => r.success && r.action === "updated").length;
+        const sk = results.filter((r) => !r.success).length;
         toast.success(`${cr} created · ${up} updated · ${sk} skipped`);
-        results.filter(r => r.warnings?.length).forEach(r => toast.warn(`Row ${r.row}: ${r.warnings.join(", ")}`));
+        results
+          .filter((r) => r.warnings?.length)
+          .forEach((r) => toast.warn(`Row ${r.row}: ${r.warnings.join(", ")}`));
         refreshData();
       } else toast.error(res.data.message || "Bulk upload failed");
-    } catch { toast.error("Invalid CSV or server error"); }
-    finally { setUploading(false); e.target.value = ""; }
+    } catch {
+      toast.error("Invalid CSV or server error");
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
   };
 
-  const Err = ({ k }) => errs[k] ? <p className="flex items-center gap-1 mt-1 text-xs text-red-500 font-medium"><FaExclamationCircle className="text-[10px] shrink-0" />{errs[k]}</p> : null;
-  const fi = (k, extra = "") => `w-full px-3 py-2.5 rounded-lg border text-sm font-medium transition-all outline-none ${extra} ${errs[k] ? "border-red-400 ring-2 ring-red-100 bg-red-50 placeholder:text-red-300" : "border-gray-200 bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 placeholder:text-gray-300"}`;
-  const Lbl = ({ text, req }) => <label className="block text-[10.5px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">{text}{req && <span className="text-red-500 ml-0.5">*</span>}</label>;
+  const Err = ({ k }) =>
+    errs[k] ? (
+      <p className="flex items-center gap-1 mt-1 text-xs text-red-500 font-medium">
+        <FaExclamationCircle className="text-[10px] shrink-0" />
+        {errs[k]}
+      </p>
+    ) : null;
+
+  const fi = (k, extra = "") =>
+    `w-full px-3 py-2.5 rounded-lg border text-sm font-medium transition-all outline-none ${extra} ${errs[k]
+      ? "border-red-400 ring-2 ring-red-100 bg-red-50 placeholder:text-red-300"
+      : "border-gray-200 bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 placeholder:text-gray-300"
+    }`;
+
+  const Lbl = ({ text, req }) => (
+    <label className="block text-[10.5px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+      {text}
+      {req && <span className="text-red-500 ml-0.5">*</span>}
+    </label>
+  );
+
   const Toggle = ({ name, checked, label, nested }) => (
     <label className="flex items-center gap-2.5 cursor-pointer group">
-      <div className={`relative w-9 h-5 rounded-full transition-all ${checked ? "bg-indigo-500" : "bg-gray-200"}`} onClick={() => nested ? setId(p => ({ ...p, posConfig: { ...(p.posConfig || {}), [name.split(".")[1]]: !checked } })) : setId(p => ({ ...p, [name]: !checked }))}>
-        <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${checked ? "translate-x-4" : "translate-x-0"}`} />
+      <div
+        className={`relative w-9 h-5 rounded-full transition-all ${checked ? "bg-indigo-500" : "bg-gray-200"
+          }`}
+        onClick={() =>
+          nested
+            ? setId((p) => ({
+              ...p,
+              posConfig: { ...(p.posConfig || {}), [name.split(".")[1]]: !checked },
+            }))
+            : setId((p) => ({ ...p, [name]: !checked }))
+        }
+      >
+        <div
+          className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${checked ? "translate-x-4" : "translate-x-0"
+            }`}
+        />
       </div>
       <span className="text-sm font-medium text-gray-700 group-hover:text-gray-900">{label}</span>
     </label>
   );
-  const RRow = ({ l, v }) => <div className="flex justify-between py-2 border-b border-gray-100 last:border-0"><span className="text-[10.5px] font-bold uppercase tracking-wider text-gray-400">{l}</span><span className="text-sm font-semibold text-gray-800 text-right max-w-[60%] truncate">{v || <span className="text-gray-300 font-normal italic text-xs">—</span>}</span></div>;
+
+  const RRow = ({ l, v }) => (
+    <div className="flex justify-between py-2 border-b border-gray-100 last:border-0">
+      <span className="text-[10.5px] font-bold uppercase tracking-wider text-gray-400">{l}</span>
+      <span className="text-sm font-semibold text-gray-800 text-right max-w-[60%] truncate">
+        {v || <span className="text-gray-300 font-normal italic text-xs">—</span>}
+      </span>
+    </div>
+  );
 
   // ── Step Content ──
   const renderStep = () => {
     switch (step) {
-      case 1: return (
-        <div className="space-y-4">
-          {/* QR Scan banner */}
-          <div className="flex items-center gap-3 bg-gradient-to-r from-indigo-50 to-violet-50 border border-indigo-100 rounded-xl px-4 py-3">
-            <FaQrcode className="text-indigo-500 text-xl shrink-0" />
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-bold text-indigo-800">Scan product barcode / QR code</p>
-              <p className="text-[11px] text-indigo-500">Auto-fill fields by scanning the product packaging</p>
-            </div>
-            <button type="button" onClick={() => setShowScanner(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 transition-all shrink-0">
-              <FaCamera className="text-[10px]" /> Scan
-            </button>
-          </div>
-
-          {/* Image Upload */}
-          <ImageUpload imageUrl={id.imageUrl} onImageChange={(url) => setId(p => ({ ...p, imageUrl: url }))} />
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div><Lbl text="Item Code" /><input className={`${fi("")} bg-gray-100 cursor-not-allowed text-gray-400`} value={id.itemCode || ""} readOnly /><p className="text-[11px] text-gray-400 mt-1">Auto-generated</p></div>
-            <div><Lbl text="Item Name" req /><input className={fi("itemName")} name="itemName" value={id.itemName || ""} onChange={handleChange} placeholder="e.g. Steel Rod 10mm" /><Err k="itemName" /></div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div><Lbl text="Category" req /><ItemGroupSearch onSelectItemGroup={g => { setId(p => ({ ...p, category: g.name })); clearErr("category"); }} />{id.category && <p className="text-xs text-indigo-600 font-semibold mt-1.5 flex items-center gap-1"><FaTag className="text-[10px]" /> {id.category}</p>}<Err k="category" /></div>
-            <div><Lbl text="Item Type" req /><select className={fi("itemType")} name="itemType" value={id.itemType || ""} onChange={handleChange}><option value="">Select type…</option><option>Product</option><option>Service</option><option>Raw Material</option></select><Err k="itemType" /></div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div><Lbl text="Unit Price (₹)" req /><input className={fi("unitPrice")} name="unitPrice" type="number" min="0" step="0.01" placeholder="0.00" value={id.unitPrice || ""} onChange={handleChange} /><Err k="unitPrice" /></div>
-            <div><Lbl text="Min. Stock" req /><input className={fi("quantity")} name="quantity" type="number" min="0" placeholder="0" value={id.quantity || ""} onChange={handleChange} /><Err k="quantity" /></div>
-            <div><Lbl text="Reorder Level" /><input className={fi("")} name="reorderLevel" type="number" min="0" placeholder="0" value={id.reorderLevel || ""} onChange={handleChange} /></div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div><Lbl text="Lead Time (Days)" /><input className={fi("")} name="leadTime" type="number" min="1" placeholder="7" value={id.leadTime || ""} onChange={handleChange} /></div>
-            <div><Lbl text="Unit of Measure" req /><select className={fi("uom")} name="uom" value={id.uom || ""} onChange={handleChange}><option value="">Select UOM…</option><option value="KG">Kilogram (KG)</option><option value="MTP">Metric Ton (MTP)</option><option value="PC">Piece (PC)</option><option value="LTR">Liter (LTR)</option><option value="MTR">Meter (MTR)</option></select><Err k="uom" /></div>
-            <div><Lbl text="Managed By" /><select className={fi("")} name="managedBy" value={id.managedBy || ""} onChange={handleChange}><option value="">Select method…</option><option value="batch">Batch</option><option value="serial">Serial Number</option><option value="none">Not Managed</option></select></div>
-          </div>
-
-          <div><Lbl text="Description" /><textarea className={`${fi("")} resize-none`} name="description" rows={3} placeholder="Brief description of this item…" value={id.description || ""} onChange={handleChange} /></div>
-          <div className="flex items-center gap-4 pt-2"><Lbl text="Status" /><select className={`${fi("")} w-auto`} name="status" value={id.status || "active"} onChange={handleChange}><option value="active">Active</option><option value="inactive">Inactive</option></select></div>
-        </div>
-      );
-
-      case 2: return (
-        <div className="space-y-5">
-          <div className="flex gap-6"><Toggle name="includeGST" checked={id.includeGST} label="Include GST" /><Toggle name="includeIGST" checked={id.includeIGST} label="Include IGST" /></div>
-          {id.includeGST && (
-            <div className="bg-blue-50 border border-blue-100 rounded-xl p-5">
-              <p className="text-sm font-bold text-blue-800 mb-4 flex items-center gap-2"><HiOutlineDocumentText /> GST Details</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div><Lbl text="GST Code" /><input className={fi("")} name="gstCode" value={id.gstCode || ""} onChange={handleChange} placeholder="e.g. GST18" /></div>
-                <div><Lbl text="GST Name" /><input className={fi("")} name="gstName" value={id.gstName || ""} onChange={handleChange} placeholder="e.g. GST 18%" /></div>
-                <div><Lbl text="GST Rate (%)" /><input className={fi("")} name="gstRate" type="number" min="0" max="100" step="0.1" placeholder="0" value={id.gstRate || ""} onChange={handleChange} /><p className="text-[11px] text-blue-500 mt-1">CGST & SGST will be auto-split (half each)</p></div>
-                <div className="grid grid-cols-2 gap-3"><div><Lbl text="CGST (%)" /><input className={`${fi("")} bg-gray-100 cursor-not-allowed text-gray-400`} value={id.cgstRate || ""} readOnly /></div><div><Lbl text="SGST (%)" /><input className={`${fi("")} bg-gray-100 cursor-not-allowed text-gray-400`} value={id.sgstRate || ""} readOnly /></div></div>
-              </div>
-            </div>
-          )}
-          {id.includeIGST && (
-            <div className="bg-purple-50 border border-purple-100 rounded-xl p-5">
-              <p className="text-sm font-bold text-purple-800 mb-4 flex items-center gap-2"><HiOutlineDocumentText /> IGST Details</p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div><Lbl text="IGST Code" /><input className={fi("")} name="igstCode" value={id.igstCode || ""} onChange={handleChange} placeholder="e.g. IGST18" /></div>
-                <div><Lbl text="IGST Name" /><input className={fi("")} name="igstName" value={id.igstName || ""} onChange={handleChange} placeholder="e.g. IGST 18%" /></div>
-                <div><Lbl text="IGST Rate (%)" /><input className={fi("")} name="igstRate" type="number" min="0" max="100" step="0.1" placeholder="0" value={id.igstRate || ""} onChange={handleChange} /></div>
-              </div>
-            </div>
-          )}
-          {!id.includeGST && !id.includeIGST && (
-            <div className="text-center py-8 text-gray-300"><HiOutlineDocumentText className="text-5xl mx-auto mb-2 opacity-30" /><p className="text-sm font-medium">Enable GST or IGST above to configure tax details</p></div>
-          )}
-        </div>
-      );
-
-      case 3: return ( // Variants Step
-        <div className="space-y-5">
-          <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 flex items-start gap-3">
-            <FaListUl className="text-amber-600 text-xl shrink-0" />
-            <div><p className="text-sm font-bold text-amber-800">Product Variants</p><p className="text-xs text-amber-600">Add variants like size, color, material with their own price, stock and barcode.</p></div>
-          </div>
-          <button type="button" onClick={addVariant} className="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-600 rounded-lg text-sm font-semibold hover:bg-indigo-100 transition-all"><FaPlus className="text-xs" /> Add Variant</button>
+      case 1:
+        return (
           <div className="space-y-4">
-            {(id.variants || []).map((variant, idx) => (
-              <div key={idx} className="border border-gray-200 rounded-xl p-4 bg-gray-50">
-                <div className="flex justify-between items-center mb-3">
-                  <h4 className="font-bold text-gray-700">Variant #{idx + 1}</h4>
-                  <button type="button" onClick={() => removeVariant(idx)} className="text-red-400 hover:text-red-600"><FaTrash className="text-sm" /></button>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-                  <div><Lbl text="SKU" /><input className={fi("")} value={variant.sku || ""} onChange={e => updateVariant(idx, "sku", e.target.value)} placeholder="Unique code" /></div>
-                  <div><Lbl text="Barcode" /><input className={fi("")} value={variant.barcode || ""} onChange={e => updateVariant(idx, "barcode", e.target.value)} placeholder="Optional" /></div>
-                  <div><Lbl text="Price (₹)" /><input type="number" step="0.01" className={fi("")} value={variant.price || ""} onChange={e => updateVariant(idx, "price", e.target.value)} placeholder="Override base price" /></div>
-                  <div><Lbl text="Stock" /><input type="number" className={fi("")} value={variant.quantity || 0} onChange={e => updateVariant(idx, "quantity", e.target.value)} /></div>
-                  <div><Lbl text="POS Price (₹)" /><input type="number" step="0.01" className={fi("")} value={variant.posPrice || ""} onChange={e => updateVariant(idx, "posPrice", e.target.value)} placeholder="Override POS price" /></div>
-                </div>
-                <div><Lbl text="Variant Image" /><ImageUpload imageUrl={variant.imageUrl || ""} onImageChange={(url) => updateVariant(idx, "imageUrl", url)} disabled={false} /></div>
-                <div className="mt-3">
-                  <label className="block text-[10.5px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">Attributes (e.g., Color: Red, Size: L)</label>
-                  <div className="space-y-2">
-                    {Object.entries(variant.attributes || {}).map(([key, val]) => (
-                      <div key={key} className="flex gap-2 items-center">
-                        <input className={`${fi("")} w-1/3 bg-gray-100` } value={key} readOnly disabled  />
-                        <input className={`${fi("")} w-1/3`} value={val} onChange={e => updateVariantAttribute(idx, key, e.target.value)} />
-                        <button type="button" onClick={() => updateVariantAttribute(idx, key, "")} className="text-red-400 hover:text-red-600"><FaMinus className="text-xs" /></button>
-                      </div>
-                    ))}
-                    <div className="flex gap-2">
-                      <input type="text" placeholder="Attribute name (e.g. Color)" className={`${fi("")} w-1/3`} id={`attrKey-${idx}`} />
-                      <input type="text" placeholder="Value (e.g. Red)" className={`${fi("")} w-1/3`} id={`attrVal-${idx}`} />
-                      <button type="button" onClick={() => {
-                        const keyInp = document.getElementById(`attrKey-${idx}`);
-                        const valInp = document.getElementById(`attrVal-${idx}`);
-                        if (keyInp.value.trim()) {
-                          addVariantAttribute(idx, keyInp.value, valInp.value);
-                          keyInp.value = "";
-                          valInp.value = "";
-                        }
-                      }} className="px-3 py-2 bg-gray-200 rounded-lg text-gray-600 text-sm">+ Add</button>
+            <div className="flex items-center gap-3 bg-gradient-to-r from-indigo-50 to-violet-50 border border-indigo-100 rounded-xl px-4 py-3">
+              <FaQrcode className="text-indigo-500 text-xl shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-indigo-800">Scan product barcode / QR code</p>
+                <p className="text-[11px] text-indigo-500">Auto-fill fields by scanning the product packaging</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowScanner(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 transition-all shrink-0"
+              >
+                <FaCamera className="text-[10px]" /> Scan
+              </button>
+            </div>
+
+            <ImageUpload imageUrl={id.imageUrl} onImageChange={(url) => setId((p) => ({ ...p, imageUrl: url }))} />
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <Lbl text="Item Code" />
+                <input
+                  className={`${fi("")} bg-gray-100 cursor-not-allowed text-gray-400`}
+                  value={id.itemCode || ""}
+                  readOnly
+                />
+                <p className="text-[11px] text-gray-400 mt-1">Auto-generated sequence</p>
+              </div>
+              <div>
+                <Lbl text="Serial No. (Excel / Ref)" />
+                <input
+                  className={fi("serialNumber")}
+                  name="serialNumber"
+                  value={id.serialNumber || ""}
+                  onChange={handleChange}
+                  placeholder="e.g. 1400, 1500"
+                />
+                <p className="text-[11px] text-gray-400 mt-1">From BOQ or supplier catalog</p>
+              </div>
+              <div>
+                <Lbl text="Item Name" req />
+                <input
+                  className={fi("itemName")}
+                  name="itemName"
+                  value={id.itemName || ""}
+                  onChange={handleChange}
+                  placeholder="e.g. Steel Rod 10mm"
+                />
+                <Err k="itemName" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <Lbl text="Category" req />
+                <ItemGroupSearch
+                  onSelectItemGroup={(g) => {
+                    setId((p) => ({ ...p, category: g.name }));
+                    clearErr("category");
+                  }}
+                />
+                {id.category && (
+                  <p className="text-xs text-indigo-600 font-semibold mt-1.5 flex items-center gap-1">
+                    <FaTag className="text-[10px]" /> {id.category}
+                  </p>
+                )}
+                <Err k="category" />
+              </div>
+              <div>
+                <Lbl text="Item Type" req />
+                <select className={fi("itemType")} name="itemType" value={id.itemType || ""} onChange={handleChange}>
+                  <option value="">Select type…</option>
+                  <option>Product</option>
+                  <option>Service</option>
+                  <option>Raw Material</option>
+                </select>
+                <Err k="itemType" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <Lbl text="Unit Price (₹)" req />
+                <input
+                  className={fi("unitPrice")}
+                  name="unitPrice"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={id.unitPrice || ""}
+                  onChange={handleChange}
+                />
+                <Err k="unitPrice" />
+              </div>
+              <div>
+                <Lbl text="Min. Stock" req />
+                <input
+                  className={fi("quantity")}
+                  name="quantity"
+                  type="number"
+                  min="0"
+                  placeholder="0"
+                  value={id.quantity || ""}
+                  onChange={handleChange}
+                />
+                <Err k="quantity" />
+              </div>
+              <div>
+                <Lbl text="Reorder Level" />
+                <input
+                  className={fi("")}
+                  name="reorderLevel"
+                  type="number"
+                  min="0"
+                  placeholder="0"
+                  value={id.reorderLevel || ""}
+                  onChange={handleChange}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <Lbl text="Lead Time (Days)" />
+                <input
+                  className={fi("")}
+                  name="leadTime"
+                  type="number"
+                  min="1"
+                  placeholder="7"
+                  value={id.leadTime || ""}
+                  onChange={handleChange}
+                />
+              </div>
+              <div>
+                <Lbl text="Unit of Measure" req />
+                <select className={fi("uom")} name="uom" value={id.uom || ""} onChange={handleChange}>
+                  <option value="">Select UOM…</option>
+                  <option value="KG">Kilogram (KG)</option>
+                  <option value="MTP">Metric Ton (MTP)</option>
+                  <option value="PC">Piece (PC)</option>
+                  <option value="LTR">Liter (LTR)</option>
+                  <option value="MTR">Meter (MTR)</option>
+                </select>
+                <Err k="uom" />
+              </div>
+              <div>
+                <Lbl text="Managed By" />
+                <select className={fi("")} name="managedBy" value={id.managedBy || ""} onChange={handleChange}>
+                  <option value="">Select method…</option>
+                  <option value="batch">Batch</option>
+                  <option value="serial">Serial Number</option>
+                  <option value="none">Not Managed</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <Lbl text="Description" />
+              <textarea
+                className={`${fi("")} resize-none`}
+                name="description"
+                rows={3}
+                placeholder="Brief description of this item…"
+                value={id.description || ""}
+                onChange={handleChange}
+              />
+            </div>
+            <div className="flex items-center gap-4 pt-2">
+              <Lbl text="Status" />
+              <select className={`${fi("")} w-auto`} name="status" value={id.status || "active"} onChange={handleChange}>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
+          </div>
+        );
+
+      case 2:
+        return (
+          <div className="space-y-5">
+            <div className="flex gap-6">
+              <Toggle name="includeGST" checked={id.includeGST} label="Include GST" />
+              <Toggle name="includeIGST" checked={id.includeIGST} label="Include IGST" />
+            </div>
+            {id.includeGST && (
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-5">
+                <p className="text-sm font-bold text-blue-800 mb-4 flex items-center gap-2">
+                  <HiOutlineDocumentText /> GST Details
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <Lbl text="GST Code" />
+                    <input className={fi("")} name="gstCode" value={id.gstCode || ""} onChange={handleChange} placeholder="e.g. GST18" />
+                  </div>
+                  <div>
+                    <Lbl text="GST Name" />
+                    <input className={fi("")} name="gstName" value={id.gstName || ""} onChange={handleChange} placeholder="e.g. GST 18%" />
+                  </div>
+                  <div>
+                    <Lbl text="GST Rate (%)" />
+                    <input
+                      className={fi("")}
+                      name="gstRate"
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                      placeholder="0"
+                      value={id.gstRate || ""}
+                      onChange={handleChange}
+                    />
+                    <p className="text-[11px] text-blue-500 mt-1">CGST & SGST will be auto-split (half each)</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Lbl text="CGST (%)" />
+                      <input className={`${fi("")} bg-gray-100 cursor-not-allowed text-gray-400`} value={id.cgstRate || ""} readOnly />
+                    </div>
+                    <div>
+                      <Lbl text="SGST (%)" />
+                      <input className={`${fi("")} bg-gray-100 cursor-not-allowed text-gray-400`} value={id.sgstRate || ""} readOnly />
                     </div>
                   </div>
+                </div>
+              </div>
+            )}
+            {id.includeIGST && (
+              <div className="bg-purple-50 border border-purple-100 rounded-xl p-5">
+                <p className="text-sm font-bold text-purple-800 mb-4 flex items-center gap-2">
+                  <HiOutlineDocumentText /> IGST Details
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <Lbl text="IGST Code" />
+                    <input className={fi("")} name="igstCode" value={id.igstCode || ""} onChange={handleChange} placeholder="e.g. IGST18" />
+                  </div>
+                  <div>
+                    <Lbl text="IGST Name" />
+                    <input className={fi("")} name="igstName" value={id.igstName || ""} onChange={handleChange} placeholder="e.g. IGST 18%" />
+                  </div>
+                  <div>
+                    <Lbl text="IGST Rate (%)" />
+                    <input
+                      className={fi("")}
+                      name="igstRate"
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                      placeholder="0"
+                      value={id.igstRate || ""}
+                      onChange={handleChange}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+            {!id.includeGST && !id.includeIGST && (
+              <div className="text-center py-8 text-gray-300">
+                <HiOutlineDocumentText className="text-5xl mx-auto mb-2 opacity-30" />
+                <p className="text-sm font-medium">Enable GST or IGST above to configure tax details</p>
+              </div>
+            )}
+          </div>
+        );
+
+      case 3:
+        return (
+          <div className="space-y-5">
+            <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 flex items-start gap-3">
+              <FaListUl className="text-amber-600 text-xl shrink-0" />
+              <div>
+                <p className="text-sm font-bold text-amber-800">Product Variants</p>
+                <p className="text-xs text-amber-600">Add variants like size, color, material with their own price, stock and barcode.</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={addVariant}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-600 rounded-lg text-sm font-semibold hover:bg-indigo-100 transition-all"
+            >
+              <FaPlus className="text-xs" /> Add Variant
+            </button>
+            <div className="space-y-4">
+              {(id.variants || []).map((variant, idx) => (
+                <div key={idx} className="border border-gray-200 rounded-xl p-4 bg-gray-50">
+                  <div className="flex justify-between items-center mb-3">
+                    <h4 className="font-bold text-gray-700">Variant #{idx + 1}</h4>
+                    <button type="button" onClick={() => removeVariant(idx)} className="text-red-400 hover:text-red-600">
+                      <FaTrash className="text-sm" />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                    <div>
+                      <Lbl text="SKU" />
+                      <input className={fi("")} value={variant.sku || ""} onChange={(e) => updateVariant(idx, "sku", e.target.value)} placeholder="Unique code" />
+                    </div>
+                    <div>
+                      <Lbl text="Barcode" />
+                      <input className={fi("")} value={variant.barcode || ""} onChange={(e) => updateVariant(idx, "barcode", e.target.value)} placeholder="Optional" />
+                    </div>
+                    <div>
+                      <Lbl text="Price (₹)" />
+                      <input
+                        type="number"
+                        step="0.01"
+                        className={fi("")}
+                        value={variant.price || ""}
+                        onChange={(e) => updateVariant(idx, "price", e.target.value)}
+                        placeholder="Override base price"
+                      />
+                    </div>
+                    <div>
+                      <Lbl text="Stock" />
+                      <input
+                        type="number"
+                        className={fi("")}
+                        value={variant.quantity || 0}
+                        onChange={(e) => updateVariant(idx, "quantity", e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <Lbl text="POS Price (₹)" />
+                      <input
+                        type="number"
+                        step="0.01"
+                        className={fi("")}
+                        value={variant.posPrice || ""}
+                        onChange={(e) => updateVariant(idx, "posPrice", e.target.value)}
+                        placeholder="Override POS price"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <Lbl text="Variant Image" />
+                    <ImageUpload imageUrl={variant.imageUrl || ""} onImageChange={(url) => updateVariant(idx, "imageUrl", url)} disabled={false} />
+                  </div>
+                  <div className="mt-3">
+                    <label className="block text-[10.5px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                      Attributes (e.g., Color: Red, Size: L)
+                    </label>
+                    <div className="space-y-2">
+                      {Object.entries(variant.attributes || {}).map(([key, val]) => (
+                        <div key={key} className="flex gap-2 items-center">
+                          <input className={`${fi("")} w-1/3 bg-gray-100`} value={key} readOnly disabled />
+                          <input className={`${fi("")} w-1/3`} value={val} onChange={(e) => updateVariantAttribute(idx, key, e.target.value)} />
+                          <button type="button" onClick={() => updateVariantAttribute(idx, key, "")} className="text-red-400 hover:text-red-600">
+                            <FaMinus className="text-xs" />
+                          </button>
+                        </div>
+                      ))}
+                      <div className="flex gap-2">
+                        <input type="text" placeholder="Attribute name (e.g. Color)" className={`${fi("")} w-1/3`} id={`attrKey-${idx}`} />
+                        <input type="text" placeholder="Value (e.g. Red)" className={`${fi("")} w-1/3`} id={`attrVal-${idx}`} />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const keyInp = document.getElementById(`attrKey-${idx}`);
+                            const valInp = document.getElementById(`attrVal-${idx}`);
+                            if (keyInp.value.trim()) {
+                              addVariantAttribute(idx, keyInp.value, valInp.value);
+                              keyInp.value = "";
+                              valInp.value = "";
+                            }
+                          }}
+                          className="px-3 py-2 bg-gray-200 rounded-lg text-gray-600 text-sm font-semibold hover:bg-gray-300"
+                        >
+                          + Add
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+
+      case 4:
+        return (
+          <div className="space-y-5">
+            <div className="bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-200 rounded-xl p-4 flex items-start gap-3">
+              <FaCashRegister className="text-orange-500 text-xl mt-0.5 shrink-0" />
+              <div>
+                <p className="text-sm font-bold text-orange-800 mb-0.5">POS (Point of Sale)</p>
+                <p className="text-xs text-orange-600">Enable this item to be sold through the POS system.</p>
+              </div>
+            </div>
+            <Toggle name="posEnabled" checked={id.posEnabled} label="Enable this item for POS (Sellable)" />
+            {id.posEnabled && (
+              <div className="border border-gray-200 rounded-xl p-5 space-y-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <Lbl text="Barcode" />
+                    <input className={fi("")} name="posConfig.barcode" value={id.posConfig?.barcode || ""} onChange={handleChange} placeholder="Scan or enter barcode" />
+                  </div>
+                  <div>
+                    <Lbl text="POS Price (Optional override)" />
+                    <input
+                      className={fi("")}
+                      name="posConfig.posPrice"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder={`Leave blank → uses ₹${id.unitPrice || 0}`}
+                      value={id.posConfig?.posPrice ?? ""}
+                      onChange={handleChange}
+                    />
+                    <p className="text-[11px] text-gray-400 mt-1">
+                      Empty = uses Unit Price: <strong>₹{id.unitPrice || 0}</strong>
+                    </p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-3">
+                    <Toggle name="posConfig.allowDiscount" checked={id.posConfig?.allowDiscount ?? true} label="Allow Discount in POS" nested />
+                    <Toggle name="posConfig.taxableInPOS" checked={id.posConfig?.taxableInPOS ?? true} label="Taxable in POS" nested />
+                    <Toggle name="posConfig.showInPOS" checked={id.posConfig?.showInPOS ?? true} label="Show in POS list" nested />
+                  </div>
+                  <div>
+                    <Lbl text="Max Discount (%)" />
+                    <input
+                      className={fi("")}
+                      name="posConfig.maxDiscountPercent"
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={id.posConfig?.maxDiscountPercent ?? 100}
+                      onChange={handleChange}
+                      disabled={!(id.posConfig?.allowDiscount ?? true)}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+
+      case 5:
+        return (
+          <div className="space-y-4">
+            <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 flex items-start gap-3">
+              <FaShieldAlt className="text-emerald-500 mt-0.5 shrink-0" />
+              <p className="text-xs text-emerald-700 font-medium">Define quality parameters for inspection during GRN or production.</p>
+            </div>
+            <Toggle name="includeQualityCheck" checked={id.includeQualityCheck} label="Include Quality Checks" />
+            {id.includeQualityCheck && (
+              <div>
+                <div className="grid grid-cols-12 gap-2 mb-2 px-1">
+                  {["Sr.", "Parameter", "Min", "Max", ""].map((h, i) => (
+                    <div
+                      key={i}
+                      className={`text-[10px] font-bold uppercase tracking-wider text-gray-400 ${i === 0 ? "col-span-1" : i === 1 ? "col-span-5" : i === 4 ? "col-span-1" : "col-span-2"
+                        }`}
+                    >
+                      {h}
+                    </div>
+                  ))}
+                </div>
+                <div className="space-y-2">
+                  {id.qualityCheckDetails.map((qc, i) => (
+                    <div key={i} className="grid grid-cols-12 gap-2 items-center bg-gray-50 rounded-lg px-2 py-1.5">
+                      <div className="col-span-1">
+                        <input
+                          className="w-full px-2 py-1.5 text-sm rounded border border-gray-200 bg-white focus:outline-none focus:border-indigo-400 text-center font-mono"
+                          name="srNo"
+                          placeholder="#"
+                          value={qc.srNo}
+                          onChange={(e) => handleQCChange(i, e)}
+                        />
+                      </div>
+                      <div className="col-span-5">
+                        <input
+                          className="w-full px-2 py-1.5 text-sm rounded border border-gray-200 bg-white focus:outline-none focus:border-indigo-400"
+                          name="parameter"
+                          placeholder="e.g. Tensile Strength"
+                          value={qc.parameter}
+                          onChange={(e) => handleQCChange(i, e)}
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <input
+                          className="w-full px-2 py-1.5 text-sm rounded border border-gray-200 bg-white focus:outline-none focus:border-indigo-400"
+                          name="min"
+                          placeholder="Min"
+                          value={qc.min}
+                          onChange={(e) => handleQCChange(i, e)}
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <input
+                          className="w-full px-2 py-1.5 text-sm rounded border border-gray-200 bg-white focus:outline-none focus:border-indigo-400"
+                          name="max"
+                          placeholder="Max"
+                          value={qc.max}
+                          onChange={(e) => handleQCChange(i, e)}
+                        />
+                      </div>
+                      <div className="col-span-2 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => removeQC(i)}
+                          className="w-7 h-7 rounded-lg bg-red-50 text-red-400 hover:bg-red-500 hover:text-white flex items-center justify-center"
+                        >
+                          <FaTrash className="text-xs" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={addQC}
+                  className="mt-3 w-full py-2.5 border-2 border-dashed border-gray-200 rounded-xl text-indigo-500 font-semibold text-sm flex items-center justify-center gap-2 hover:border-indigo-400 hover:bg-indigo-50"
+                >
+                  <FaPlus className="text-xs" /> Add Quality Parameter
+                </button>
+              </div>
+            )}
+          </div>
+        );
+
+      case 6:
+        return (
+          <div className="space-y-5">
+            <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex items-start gap-3">
+              <FaRuler className="text-blue-500 mt-0.5 shrink-0" />
+              <p className="text-xs text-blue-700 font-medium">Physical dimensions and weight are used for logistics and warehouse management. All optional.</p>
+            </div>
+            <div>
+              <p className="text-sm font-bold text-gray-700 mb-3">Dimensions</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                {[
+                  { n: "length", l: "Length (cm)", ph: "0" },
+                  { n: "width", l: "Width (cm)", ph: "0" },
+                  { n: "height", l: "Height (cm)", ph: "0" },
+                  { n: "weight", l: "Weight (kg)", ph: "0.00", step: "0.01" },
+                ].map((f) => (
+                  <div key={f.n}>
+                    <Lbl text={f.l} />
+                    <input className={fi("")} name={f.n} type="number" min="0" step={f.step || "1"} placeholder={f.ph} value={id[f.n] || ""} onChange={handleChange} />
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="border-t border-gray-100 pt-5">
+              <p className="text-sm font-bold text-gray-700 mb-3">Additional Details</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Lbl text="Manufacturer" />
+                  <input className={fi("")} name="manufacturer" value={id.manufacturer || ""} onChange={handleChange} placeholder="e.g. Tata Steel" />
+                </div>
+                <div>
+                  <Lbl text="Expiry Date" />
+                  <input className={fi("")} name="expiryDate" type="date" value={id.expiryDate || ""} onChange={handleChange} />
+                </div>
+                <div>
+                  <Lbl text="Batch Number" />
+                  <input className={fi("")} name="batchNumber" value={id.batchNumber || ""} onChange={handleChange} placeholder="e.g. BATCH-2024-001" />
+                </div>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-4">
+                <Toggle name="gnr" checked={id.gnr} label="GNR Applicable" />
+                <Toggle name="delivery" checked={id.delivery} label="Delivery Item" />
+                <Toggle name="productionProcess" checked={id.productionProcess} label="Production Process" />
+              </div>
+            </div>
+          </div>
+        );
+
+      case 7:
+        return (
+          <div className="space-y-4">
+            <p className="text-sm text-gray-500">Review all details before saving.</p>
+            {id.imageUrl && (
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-200 flex items-center gap-4">
+                <img
+                  src={id.imageUrl}
+                  alt="Item"
+                  className="w-16 h-16 object-cover rounded-lg border border-gray-200"
+                  onError={(e) => {
+                    e.target.onerror = null;
+                    e.target.src = "https://placehold.co/200x200/eeeeee/999999?text=No+Image&font=montserrat";
+                  }}
+                />
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-0.5">Item Image</p>
+                  <p className="text-xs text-indigo-500 font-medium truncate max-w-[200px]">{id.imageUrl}</p>
+                </div>
+              </div>
+            )}
+            <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+              <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-3 flex items-center gap-1.5">
+                <FaBoxOpen className="text-indigo-400" /> Basic Info
+              </p>
+              <RRow l="Code" v={id.itemCode} />
+              <RRow l="Serial No." v={id.serialNumber} />
+              <RRow l="Name" v={id.itemName} />
+              <RRow l="Category" v={id.category} />
+              <RRow l="Type" v={id.itemType} />
+              <RRow l="Unit Price" v={id.unitPrice ? `₹${Number(id.unitPrice).toFixed(2)}` : ""} />
+              <RRow l="Min. Stock" v={id.quantity} />
+              <RRow l="UOM" v={id.uom} />
+              <RRow l="Reorder Level" v={id.reorderLevel} />
+              <RRow l="Lead Time" v={id.leadTime ? `${id.leadTime} days` : ""} />
+              <RRow l="Status" v={id.status} />
+            </div>
+            <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+              <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-3 flex items-center gap-1.5">
+                <HiOutlineDocumentText className="text-indigo-400" /> Tax
+              </p>
+              <RRow l="Include GST" v={id.includeGST ? "Yes" : "No"} />
+              <RRow l="GST Rate" v={id.gstRate ? `${id.gstRate}%` : ""} />
+              <RRow l="Include IGST" v={id.includeIGST ? "Yes" : "No"} />
+              <RRow l="IGST Rate" v={id.igstRate ? `${id.igstRate}%` : ""} />
+            </div>
+            {(id.variants || []).length > 0 && (
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-3 flex items-center gap-1.5">
+                  <FaListUl className="text-amber-500" /> Variants ({id.variants.length})
+                </p>
+                {id.variants.map((v, i) => (
+                  <div key={i} className="text-xs py-1">
+                    SKU: {v.sku || "—"} · Price: {v.price ? `₹${v.price}` : "default"} · Stock: {v.quantity || 0}
+                  </div>
+                ))}
+              </div>
+            )}
+            {id.posEnabled && (
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-3 flex items-center gap-1.5">
+                  <FaCashRegister className="text-orange-400" /> POS
+                </p>
+                <RRow l="POS Price" v={id.posConfig?.posPrice ? `₹${id.posConfig.posPrice}` : `₹${id.unitPrice} (unit price)`} />
+                <RRow l="Barcode" v={id.posConfig?.barcode} />
+                <RRow l="Discount" v={id.posConfig?.allowDiscount ? `Allowed (max ${id.posConfig.maxDiscountPercent}%)` : "Not allowed"} />
+                <RRow l="Taxable" v={id.posConfig?.taxableInPOS ? "Yes" : "No"} />
+              </div>
+            )}
+            {id.includeQualityCheck && id.qualityCheckDetails?.length > 0 && (
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-3 flex items-center gap-1.5">
+                  <FaShieldAlt className="text-emerald-400" /> Quality ({id.qualityCheckDetails.length} parameters)
+                </p>
+                {id.qualityCheckDetails.map((q, i) => (
+                  <RRow key={i} l={q.parameter || `Param ${i + 1}`} v={`Min: ${q.min || "—"} · Max: ${q.max || "—"}`} />
+                ))}
+              </div>
+            )}
+            {(id.length || id.weight || id.manufacturer) && (
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-3 flex items-center gap-1.5">
+                  <FaRuler className="text-blue-400" /> Dimensions
+                </p>
+                {id.length && <RRow l="L × W × H" v={`${id.length} × ${id.width || 0} × ${id.height || 0} cm`} />}
+                {id.weight && <RRow l="Weight" v={`${id.weight} kg`} />}
+                {id.manufacturer && <RRow l="Manufacturer" v={id.manufacturer} />}
+              </div>
+            )}
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  // ── LIST VIEW ──
+  if (view === "list")
+    return (
+      <div className="min-h-screen bg-gray-50">
+        {showScanner && (
+          <QRScannerModal onScanSuccess={handleScanSuccess} onManual={handleManualEntry} onClose={() => setShowScanner(false)} />
+        )}
+        {viewModalOpen && <ViewItemModal item={viewItem} onClose={() => setViewModalOpen(false)} />}
+        <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-6">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+            <div>
+              <h1 className="text-2xl font-extrabold tracking-tight text-gray-900">Item Management</h1>
+              <p className="text-sm text-gray-400 mt-0.5">{stats.total} total items</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={downloadTemplate}
+                className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-gray-900 text-white text-sm font-semibold hover:bg-gray-700 transition-all"
+              >
+                <FaDownload className="text-xs" /> Template
+              </button>
+              <label className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700 cursor-pointer transition-all">
+                {uploading ? (
+                  "Uploading…"
+                ) : (
+                  <>
+                    <FaFileUpload className="text-xs" /> Bulk Upload
+                  </>
+                )}
+                <input type="file" hidden accept=".csv" onChange={handleBulk} />
+              </label>
+              <button
+                onClick={handleCreateClick}
+                className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-all shadow-sm shadow-indigo-200"
+              >
+                <FaPlus className="text-xs" /> Create Item
+              </button>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+            {[
+              { label: "Total", value: stats.total, emoji: "📦", filter: "All" },
+              { label: "Product", value: stats.product, emoji: "🛍️", filter: "Product" },
+              { label: "Service", value: stats.service, emoji: "🔧", filter: "Service" },
+              { label: "Raw Material", value: stats.rawMat, emoji: "⚙️", filter: "Raw Material" },
+            ].map((s) => (
+              <div
+                key={s.label}
+                onClick={() => {
+                  setFilterType(s.filter);
+                  setCurrentPage(1);
+                }}
+                className={`bg-white rounded-2xl p-4 flex items-center gap-3 cursor-pointer border-2 transition-all ${filterType === s.filter
+                  ? "border-indigo-400 shadow-md shadow-indigo-100"
+                  : "border-transparent shadow-sm hover:border-indigo-200 hover:-translate-y-0.5"
+                  }`}
+              >
+                <span className="text-2xl">{s.emoji}</span>
+                <div>
+                  <p className="text-[10.5px] font-bold uppercase tracking-widest text-gray-400">{s.label}</p>
+                  <p className="text-2xl font-extrabold tracking-tight text-gray-900 leading-none mt-0.5">{s.value}</p>
                 </div>
               </div>
             ))}
           </div>
-        </div>
-      );
 
-      case 4: return (
-        <div className="space-y-5">
-          <div className="bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-200 rounded-xl p-4 flex items-start gap-3">
-            <FaCashRegister className="text-orange-500 text-xl mt-0.5 shrink-0" />
-            <div><p className="text-sm font-bold text-orange-800 mb-0.5">POS (Point of Sale)</p><p className="text-xs text-orange-600">Enable this item to be sold through the POS system.</p></div>
-          </div>
-          <Toggle name="posEnabled" checked={id.posEnabled} label="Enable this item for POS (Sellable)" />
-          {id.posEnabled && (
-            <div className="border border-gray-200 rounded-xl p-5 space-y-5">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div><Lbl text="Barcode" /><input className={fi("")} name="posConfig.barcode" value={id.posConfig?.barcode || ""} onChange={handleChange} placeholder="Scan or enter barcode" /></div>
-                <div><Lbl text="POS Price (Optional override)" /><input className={fi("")} name="posConfig.posPrice" type="number" min="0" step="0.01" placeholder={`Leave blank → uses ₹${id.unitPrice || 0}`} value={id.posConfig?.posPrice ?? ""} onChange={handleChange} /><p className="text-[11px] text-gray-400 mt-1">Empty = uses Unit Price: <strong>₹{id.unitPrice || 0}</strong></p></div>
+          {/* Table Container */}
+          <div className="bg-white rounded-2xl shadow-sm overflow-hidden border border-gray-100">
+            <div className="flex flex-wrap items-center gap-3 px-5 py-4 border-b border-gray-100">
+              <div className="relative flex-1 min-w-[180px] max-w-xs">
+                <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300 text-xs pointer-events-none" />
+                <input
+                  className="w-full pl-8 pr-3 py-2 rounded-lg border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:bg-white transition-all placeholder:text-gray-300"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search items…"
+                />
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-3"><Toggle name="posConfig.allowDiscount" checked={id.posConfig?.allowDiscount ?? true} label="Allow Discount in POS" nested /><Toggle name="posConfig.taxableInPOS" checked={id.posConfig?.taxableInPOS ?? true} label="Taxable in POS" nested /><Toggle name="posConfig.showInPOS" checked={id.posConfig?.showInPOS ?? true} label="Show in POS list" nested /></div>
-                <div><Lbl text="Max Discount (%)" /><input className={fi("")} name="posConfig.maxDiscountPercent" type="number" min="0" max="100" value={id.posConfig?.maxDiscountPercent ?? 100} onChange={handleChange} disabled={!(id.posConfig?.allowDiscount ?? true)} /></div>
-              </div>
-            </div>
-          )}
-        </div>
-      );
-
-      case 5: return (
-        <div className="space-y-4">
-          <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 flex items-start gap-3"><FaShieldAlt className="text-emerald-500 mt-0.5 shrink-0" /><p className="text-xs text-emerald-700 font-medium">Define quality parameters for inspection during GRN or production.</p></div>
-          <Toggle name="includeQualityCheck" checked={id.includeQualityCheck} label="Include Quality Checks" />
-          {id.includeQualityCheck && (
-            <div>
-              <div className="grid grid-cols-12 gap-2 mb-2 px-1">{["Sr.", "Parameter", "Min", "Max", ""].map((h, i) => (<div key={i} className={`text-[10px] font-bold uppercase tracking-wider text-gray-400 ${i===0?"col-span-1":i===1?"col-span-5":i===4?"col-span-1":"col-span-2"}`}>{h}</div>))}</div>
-              <div className="space-y-2">
-                {id.qualityCheckDetails.map((qc, i) => (
-                  <div key={i} className="grid grid-cols-12 gap-2 items-center bg-gray-50 rounded-lg px-2 py-1.5">
-                    <div className="col-span-1"><input className="w-full px-2 py-1.5 text-sm rounded border border-gray-200 bg-white focus:outline-none focus:border-indigo-400 text-center font-mono" name="srNo" placeholder="#" value={qc.srNo} onChange={e => handleQCChange(i, e)} /></div>
-                    <div className="col-span-5"><input className="w-full px-2 py-1.5 text-sm rounded border border-gray-200 bg-white focus:outline-none focus:border-indigo-400" name="parameter" placeholder="e.g. Tensile Strength" value={qc.parameter} onChange={e => handleQCChange(i, e)} /></div>
-                    <div className="col-span-2"><input className="w-full px-2 py-1.5 text-sm rounded border border-gray-200 bg-white focus:outline-none focus:border-indigo-400" name="min" placeholder="Min" value={qc.min} onChange={e => handleQCChange(i, e)} /></div>
-                    <div className="col-span-2"><input className="w-full px-2 py-1.5 text-sm rounded border border-gray-200 bg-white focus:outline-none focus:border-indigo-400" name="max" placeholder="Max" value={qc.max} onChange={e => handleQCChange(i, e)} /></div>
-                    <div className="col-span-2 flex justify-end"><button type="button" onClick={() => removeQC(i)} className="w-7 h-7 rounded-lg bg-red-50 text-red-400 hover:bg-red-500 hover:text-white flex items-center justify-center"><FaTrash className="text-xs" /></button></div>
-                  </div>
+              <div className="flex gap-2 flex-wrap ml-auto">
+                {["All", "Product", "Service", "Raw Material"].map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => {
+                      setFilterType(t);
+                      setCurrentPage(1);
+                    }}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${filterType === t
+                      ? "bg-indigo-600 text-white border-indigo-600"
+                      : "bg-gray-50 text-gray-500 border-gray-200 hover:border-indigo-300 hover:text-indigo-500"
+                      }`}
+                  >
+                    {t}
+                  </button>
                 ))}
               </div>
-              <button type="button" onClick={addQC} className="mt-3 w-full py-2.5 border-2 border-dashed border-gray-200 rounded-xl text-indigo-500 font-semibold text-sm flex items-center justify-center gap-2 hover:border-indigo-400 hover:bg-indigo-50"><FaPlus className="text-xs" /> Add Quality Parameter</button>
             </div>
-          )}
-        </div>
-      );
 
-      case 6: return (
-        <div className="space-y-5">
-          <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex items-start gap-3"><FaRuler className="text-blue-500 mt-0.5 shrink-0" /><p className="text-xs text-blue-700 font-medium">Physical dimensions and weight are used for logistics and warehouse management. All optional.</p></div>
-          <div><p className="text-sm font-bold text-gray-700 mb-3">Dimensions</p><div className="grid grid-cols-2 sm:grid-cols-4 gap-4">{[{n:"length",l:"Length (cm)",ph:"0"},{n:"width",l:"Width (cm)",ph:"0"},{n:"height",l:"Height (cm)",ph:"0"},{n:"weight",l:"Weight (kg)",ph:"0.00",step:"0.01"}].map(f => (<div key={f.n}><Lbl text={f.l} /><input className={fi("")} name={f.n} type="number" min="0" step={f.step||"1"} placeholder={f.ph} value={id[f.n]||""} onChange={handleChange} /></div>))}</div></div>
-          <div className="border-t border-gray-100 pt-5"><p className="text-sm font-bold text-gray-700 mb-3">Additional Details</p><div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><div><Lbl text="Manufacturer" /><input className={fi("")} name="manufacturer" value={id.manufacturer||""} onChange={handleChange} placeholder="e.g. Tata Steel" /></div><div><Lbl text="Expiry Date" /><input className={fi("")} name="expiryDate" type="date" value={id.expiryDate||""} onChange={handleChange} /></div><div><Lbl text="Batch Number" /><input className={fi("")} name="batchNumber" value={id.batchNumber||""} onChange={handleChange} placeholder="e.g. BATCH-2024-001" /></div></div><div className="mt-4 flex flex-wrap gap-4"><Toggle name="gnr" checked={id.gnr} label="GNR Applicable" /><Toggle name="delivery" checked={id.delivery} label="Delivery Item" /><Toggle name="productionProcess" checked={id.productionProcess} label="Production Process" /></div></div>
-        </div>
-      );
-
-      case 7: return (
-        <div className="space-y-4">
-          <p className="text-sm text-gray-500">Review all details before saving.</p>
-          {id.imageUrl && (<div className="bg-gray-50 rounded-xl p-4 border border-gray-200 flex items-center gap-4"><img src={id.imageUrl} alt="Item" className="w-16 h-16 object-cover rounded-lg border border-gray-200" onError={e => { e.target.onerror = null; e.target.src = "https://placehold.co/200x200/eeeeee/999999?text=No+Image&font=montserrat"; }} /><div><p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-0.5">Item Image</p><p className="text-xs text-indigo-500 font-medium truncate max-w-[200px]">{id.imageUrl}</p></div></div>)}
-          <div className="bg-gray-50 rounded-xl p-4 border border-gray-200"><p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-3 flex items-center gap-1.5"><FaBoxOpen className="text-indigo-400" /> Basic Info</p><RRow l="Code" v={id.itemCode} /><RRow l="Name" v={id.itemName} /><RRow l="Category" v={id.category} /><RRow l="Type" v={id.itemType} /><RRow l="Unit Price" v={id.unitPrice ? `₹${Number(id.unitPrice).toFixed(2)}` : ""} /><RRow l="Min. Stock" v={id.quantity} /><RRow l="UOM" v={id.uom} /><RRow l="Reorder Level" v={id.reorderLevel} /><RRow l="Lead Time" v={id.leadTime ? `${id.leadTime} days` : ""} /><RRow l="Status" v={id.status} /></div>
-          <div className="bg-gray-50 rounded-xl p-4 border border-gray-200"><p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-3 flex items-center gap-1.5"><HiOutlineDocumentText className="text-indigo-400" /> Tax</p><RRow l="Include GST" v={id.includeGST ? "Yes" : "No"} /><RRow l="GST Rate" v={id.gstRate ? `${id.gstRate}%` : ""} /><RRow l="Include IGST" v={id.includeIGST ? "Yes" : "No"} /><RRow l="IGST Rate" v={id.igstRate ? `${id.igstRate}%` : ""} /></div>
-          {(id.variants || []).length > 0 && (<div className="bg-gray-50 rounded-xl p-4 border border-gray-200"><p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-3 flex items-center gap-1.5"><FaListUl className="text-amber-500" /> Variants ({id.variants.length})</p>{id.variants.map((v, i) => (<div key={i} className="text-xs py-1">SKU: {v.sku || "—"} · Price: {v.price ? `₹${v.price}` : "default"} · Stock: {v.quantity || 0}</div>))}</div>)}
-          {id.posEnabled && (<div className="bg-gray-50 rounded-xl p-4 border border-gray-200"><p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-3 flex items-center gap-1.5"><FaCashRegister className="text-orange-400" /> POS</p><RRow l="POS Price" v={id.posConfig?.posPrice ? `₹${id.posConfig.posPrice}` : `₹${id.unitPrice} (unit price)`} /><RRow l="Barcode" v={id.posConfig?.barcode} /><RRow l="Discount" v={id.posConfig?.allowDiscount ? `Allowed (max ${id.posConfig.maxDiscountPercent}%)` : "Not allowed"} /><RRow l="Taxable" v={id.posConfig?.taxableInPOS ? "Yes" : "No"} /></div>)}
-          {id.includeQualityCheck && id.qualityCheckDetails?.length > 0 && (<div className="bg-gray-50 rounded-xl p-4 border border-gray-200"><p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-3 flex items-center gap-1.5"><FaShieldAlt className="text-emerald-400" /> Quality ({id.qualityCheckDetails.length} parameters)</p>{id.qualityCheckDetails.map((q, i) => <RRow key={i} l={q.parameter||`Param ${i+1}`} v={`Min: ${q.min||"—"} · Max: ${q.max||"—"}`} />)}</div>)}
-          {(id.length || id.weight || id.manufacturer) && (<div className="bg-gray-50 rounded-xl p-4 border border-gray-200"><p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-3 flex items-center gap-1.5"><FaRuler className="text-blue-400" /> Dimensions</p>{id.length && <RRow l="L × W × H" v={`${id.length} × ${id.width||0} × ${id.height||0} cm`} />}{id.weight && <RRow l="Weight" v={`${id.weight} kg`} />}{id.manufacturer && <RRow l="Manufacturer" v={id.manufacturer} />}</div>)}
-        </div>
-      );
-
-      default: return null;
-    }
-  };
-
-  // LIST VIEW (unchanged except maybe variant count column)
-  if (view === "list") return (
-    <div className="min-h-screen bg-gray-50">
-      {showScanner && <QRScannerModal onScanSuccess={handleScanSuccess} onManual={handleManualEntry} onClose={() => setShowScanner(false)} />}
-          {viewModalOpen && <ViewItemModal item={viewItem} onClose={() => setViewModalOpen(false)} />}
-      <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-6">
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-          <div><h1 className="text-2xl font-extrabold tracking-tight text-gray-900">Item Management</h1><p className="text-sm text-gray-400 mt-0.5">{stats.total} total items</p></div>
-          <div className="flex flex-wrap gap-2">
-            <button onClick={downloadTemplate} className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-gray-900 text-white text-sm font-semibold hover:bg-gray-700 transition-all"><FaDownload className="text-xs" /> Template</button>
-            <label className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700 cursor-pointer transition-all">{uploading ? "Uploading…" : <><FaFileUpload className="text-xs" /> Bulk Upload</>}<input type="file" hidden accept=".csv" onChange={handleBulk} /></label>
-            <button onClick={handleCreateClick} className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-all shadow-sm shadow-indigo-200"><FaPlus className="text-xs" /> Create Item</button>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
-          {[{ label:"Total", value:stats.total, emoji:"📦", filter:"All" },{ label:"Product", value:stats.product, emoji:"🛍️", filter:"Product" },{ label:"Service", value:stats.service, emoji:"🔧", filter:"Service" },{ label:"Raw Material", value:stats.rawMat, emoji:"⚙️", filter:"Raw Material" }].map(s => (
-            <div key={s.label} onClick={() => { setFilterType(s.filter); setCurrentPage(1); }} className={`bg-white rounded-2xl p-4 flex items-center gap-3 cursor-pointer border-2 transition-all ${filterType===s.filter ? "border-indigo-400 shadow-md shadow-indigo-100" : "border-transparent shadow-sm hover:border-indigo-200 hover:-translate-y-0.5"}`}>
-              <span className="text-2xl">{s.emoji}</span>
-              <div><p className="text-[10.5px] font-bold uppercase tracking-widest text-gray-400">{s.label}</p><p className="text-2xl font-extrabold tracking-tight text-gray-900 leading-none mt-0.5">{s.value}</p></div>
-            </div>
-          ))}
-        </div>
-        <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-          <div className="flex flex-wrap items-center gap-3 px-5 py-4 border-b border-gray-100">
-            <div className="relative flex-1 min-w-[180px] max-w-xs"><FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300 text-xs pointer-events-none" /><input className="w-full pl-8 pr-3 py-2 rounded-lg border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:bg-white transition-all placeholder:text-gray-300" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search items…" /></div>
-            <div className="flex gap-2 flex-wrap ml-auto">{["All","Product","Service","Raw Material"].map(t => <button key={t} onClick={() => { setFilterType(t); setCurrentPage(1); }} className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${filterType===t ? "bg-indigo-600 text-white border-indigo-600" : "bg-gray-50 text-gray-500 border-gray-200 hover:border-indigo-300 hover:text-indigo-500"}`}>{t}</button>)}</div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm border-collapse">
-              <thead><tr className="bg-gray-50 border-b border-gray-100">{["Image","Code","Item","Category","Type","Price","UOM","Status","Variants","POS","Actions"].map(h => <th key={h} className="px-4 py-3 text-left text-[10.5px] font-bold uppercase tracking-wider text-gray-400 whitespace-nowrap">{h}</th>)}</tr></thead>
-              <tbody>
-                {loading ? Array(5).fill(0).map((_, i) => <tr key={i} className="border-b border-gray-50">{Array(11).fill(0).map((__, j) => <td key={j} className="px-4 py-3"><div className="h-3.5 rounded bg-gradient-to-r from-gray-100 via-gray-200 to-gray-100 bg-[length:400%_100%] animate-[shimmer_1.4s_infinite]" /></td>)}</tr>) : items.length === 0 ? <tr><td colSpan={11} className="text-center py-16"><div className="text-4xl mb-2 opacity-20">📦</div><p className="text-sm font-medium text-gray-300">No items found</p></td></tr> : items.map(it => (
-                  <tr key={it._id} className="border-b border-gray-50 hover:bg-indigo-50/30 transition-colors">
-                    <td className="px-1 py-1.5">{it.imageUrl ? <img src={it.imageUrl} alt={it.itemName} className="w-12 h-12 object-cover rounded-md border border-gray-200" onError={e => { e.target.onerror = null; e.target.src = "https://placehold.co/800x800/eeeeee/999999?text=No+Image&font=montserrat"; }} /> : <div className="w-12 h-12 rounded-md border border-dashed border-gray-200 bg-gray-50 flex items-center justify-center"><FaBoxOpen className="text-gray-300 text-base" /></div>}</td>
-                    <td className="px-4 py-3"><span className="font-mono text-[11px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">{it.itemCode}</span></td>
-                    <td className="px-4 py-3"><p className="font-semibold text-gray-900 text-sm leading-tight">{it.itemName}</p>{it.manufacturer && <p className="text-xs text-gray-400">{it.manufacturer}</p>}</td>
-                    <td className="px-4 py-3 text-xs text-gray-500 font-medium">{it.category || <span className="text-gray-200">—</span>}</td>
-                    <td className="px-4 py-3"><span className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-full ${it.itemType==="Product" ? "bg-blue-50 text-blue-600" : it.itemType==="Service" ? "bg-purple-50 text-purple-600" : it.itemType==="Raw Material" ? "bg-amber-50 text-amber-600" : "bg-gray-100 text-gray-500"}`}>{it.itemType || "—"}</span></td>
-                    <td className="px-4 py-3 font-mono text-sm font-bold text-gray-700">₹{Number(it.unitPrice||0).toFixed(2)}</td>
-                    <td className="px-4 py-3 text-xs text-gray-500">{it.uom || <span className="text-gray-200">—</span>}</td>
-                    <td className="px-4 py-3"><span className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-full ${it.status==="active" ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-500"}`}>{it.status}</span></td>
-                    <td className="px-4 py-3 text-center">{it.variants?.length > 0 ? <span className="bg-amber-100 text-amber-700 text-[10px] font-bold px-1.5 py-0.5 rounded">{it.variants.length}</span> : <span className="text-gray-200">—</span>}</td>
-                    <td className="px-4 py-3">{it.posEnabled ? <span className="text-[10.5px] font-semibold px-2 py-0.5 rounded-full bg-orange-50 text-orange-500">POS</span> : <span className="text-gray-200 text-xs">—</span>}</td>
-                    <td className="px-4 py-3"><div className="flex gap-1.5">
-                      <button onClick={() => handleView(it._id)} className="w-7 h-7 rounded-lg bg-green-50 text-green-500 hover:bg-green-500 hover:text-white flex items-center justify-center"><FaEye className="text-xs" /></button>  
-                      <button onClick={() => handleEdit(it)} className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-500 hover:bg-indigo-500 hover:text-white flex items-center justify-center"><FaEdit className="text-xs" /></button>
-                      <button onClick={() => handleDelete(it._id)} className="w-7 h-7 rounded-lg bg-red-50 text-red-400 hover:bg-red-500 hover:text-white flex items-center justify-center"><FaTrash className="text-xs" /></button>
-                      </div>
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-100 text-[10.5px] font-bold uppercase tracking-wider text-gray-400">
+                    <th className="px-3 py-3 text-center w-14">Image</th>
+                    <th className="px-4 py-3 text-left w-28 whitespace-nowrap">Code</th>
+                    <th className="px-4 py-3 text-left w-24 whitespace-nowrap">Serial No.</th>
+                    <th className="px-4 py-3 text-left min-w-[320px] max-w-[460px]">Item</th>
+                    <th className="px-4 py-3 text-left min-w-[140px] whitespace-nowrap">Category</th>
+                    <th className="px-4 py-3 text-left w-28 whitespace-nowrap">Type</th>
+                    <th className="px-4 py-3 text-left w-32 whitespace-nowrap">Total Amount</th>
+                    <th className="px-4 py-3 text-left w-16 whitespace-nowrap">UOM</th>
+                    <th className="px-4 py-3 text-left w-20 whitespace-nowrap">Status</th>
+                    <th className="px-4 py-3 text-center w-20 whitespace-nowrap">Variants</th>
+                    <th className="px-4 py-3 text-left w-16 whitespace-nowrap">POS</th>
+                    <th className="px-4 py-3 text-center w-24 whitespace-nowrap">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="px-5 py-4 border-t flex items-center justify-between">
-            <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="px-3 py-1 rounded-md bg-gray-100 text-gray-600 disabled:opacity-50 text-sm font-medium hover:bg-gray-200"><FaChevronLeft className="inline mr-1 text-xs" /> Prev</button>
-            <span className="text-sm text-gray-500">Page {currentPage} of {totalPages}</span>
-            <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="px-3 py-1 rounded-md bg-gray-100 text-gray-600 disabled:opacity-50 text-sm font-medium hover:bg-gray-200">Next <FaChevronRight className="inline ml-1 text-xs" /></button>
+                </thead>
+                <tbody>
+                  {loading ? (
+                    Array(5)
+                      .fill(0)
+                      .map((_, i) => (
+                        <tr key={i} className="border-b border-gray-50">
+                          {Array(12)
+                            .fill(0)
+                            .map((__, j) => (
+                              <td key={j} className="px-4 py-3">
+                                <div className="h-3.5 rounded bg-gradient-to-r from-gray-100 via-gray-200 to-gray-100 bg-[length:400%_100%] animate-[shimmer_1.4s_infinite]" />
+                              </td>
+                            ))}
+                        </tr>
+                      ))
+                  ) : items.length === 0 ? (
+                    <tr>
+                      <td colSpan={12} className="text-center py-16">
+                        <div className="text-4xl mb-2 opacity-20">📦</div>
+                        <p className="text-sm font-medium text-gray-300">No items found</p>
+                      </td>
+                    </tr>
+                  ) : (
+                    items.map((it) => {
+                      const computedAmount = Number(
+                        it.totalAmount ||
+                        it.unitPrice ||
+                        (Number(it.unitRateSupply || 0) + Number(it.unitRateInstallation || 0)) ||
+                        0
+                      );
+
+                      return (
+                        <tr key={it._id} className="border-b border-gray-50 hover:bg-indigo-50/30 transition-colors">
+                          <td className="px-3 py-2 text-center align-top">
+                            {it.imageUrl ? (
+                              <img
+                                src={it.imageUrl}
+                                alt={it.itemName}
+                                className="w-11 h-11 object-cover rounded-md border border-gray-200 mx-auto"
+                                onError={(e) => {
+                                  e.target.onerror = null;
+                                  e.target.src =
+                                    "https://placehold.co/800x800/eeeeee/999999?text=No+Image&font=montserrat";
+                                }}
+                              />
+                            ) : (
+                              <div className="w-11 h-11 rounded-md border border-dashed border-gray-200 bg-gray-50 flex items-center justify-center mx-auto">
+                                <FaBoxOpen className="text-gray-300 text-base" />
+                              </div>
+                            )}
+                          </td>
+
+                          {/* Code */}
+                          <td className="px-4 py-3 align-top whitespace-nowrap">
+                            <span className="font-mono text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">
+                              {it.itemCode || "—"}
+                            </span>
+                          </td>
+
+                          {/* Serial Number */}
+                          <td className="px-4 py-3 align-top whitespace-nowrap">
+                            {it.serialNumber ? (
+                              <span className="font-mono text-[11px] font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                                {it.serialNumber}
+                              </span>
+                            ) : (
+                              <span className="text-gray-300 text-xs italic">—</span>
+                            )}
+                          </td>
+
+                          {/* Item Name with Read More */}
+                          <td className="px-4 py-3 align-top min-w-[320px] max-w-[460px]">
+                            <TruncatedItemCell text={it.itemName} manufacturer={it.manufacturer} limit={75} />
+                          </td>
+
+                          <td className="px-4 py-3 align-top text-xs text-gray-500 font-medium">
+                            {it.category || <span className="text-gray-200">—</span>}
+                          </td>
+
+                          <td className="px-4 py-3 align-top whitespace-nowrap">
+                            <span
+                              className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-full ${it.itemType === "Product"
+                                ? "bg-blue-50 text-blue-600"
+                                : it.itemType === "Service"
+                                  ? "bg-purple-50 text-purple-600"
+                                  : it.itemType === "Raw Material"
+                                    ? "bg-amber-50 text-amber-600"
+                                    : "bg-gray-100 text-gray-500"
+                                }`}
+                            >
+                              {it.itemType || "—"}
+                            </span>
+                          </td>
+
+                          {/* Reflected Total Amount Column */}
+                          <td className="px-4 py-3 align-top font-mono text-sm font-bold text-gray-700 whitespace-nowrap">
+                            ₹{computedAmount.toLocaleString("en-IN", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </td>
+
+                          <td className="px-4 py-3 align-top text-xs text-gray-500 whitespace-nowrap">
+                            {it.uom || it.unit || <span className="text-gray-200">—</span>}
+                          </td>
+
+                          <td className="px-4 py-3 align-top whitespace-nowrap">
+                            <span
+                              className={`text-[10.5px] font-semibold px-2 py-0.5 rounded-full ${it.status === "active" ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-500"
+                                }`}
+                            >
+                              {it.status}
+                            </span>
+                          </td>
+
+                          <td className="px-4 py-3 align-top text-center whitespace-nowrap">
+                            {it.variants?.length > 0 ? (
+                              <span className="bg-amber-100 text-amber-700 text-[10px] font-bold px-1.5 py-0.5 rounded">
+                                {it.variants.length}
+                              </span>
+                            ) : (
+                              <span className="text-gray-200">—</span>
+                            )}
+                          </td>
+
+                          <td className="px-4 py-3 align-top whitespace-nowrap">
+                            {it.posEnabled ? (
+                              <span className="text-[10.5px] font-semibold px-2 py-0.5 rounded-full bg-orange-50 text-orange-500">
+                                POS
+                              </span>
+                            ) : (
+                              <span className="text-gray-200 text-xs">—</span>
+                            )}
+                          </td>
+
+                          <td className="px-4 py-3 align-top text-center whitespace-nowrap">
+                            <div className="flex justify-center gap-1.5">
+                              <button
+                                onClick={() => handleView(it._id)}
+                                className="w-7 h-7 rounded-lg bg-green-50 text-green-500 hover:bg-green-500 hover:text-white flex items-center justify-center transition-colors"
+                                title="View"
+                              >
+                                <FaEye className="text-xs" />
+                              </button>
+                              <button
+                                onClick={() => handleEdit(it)}
+                                className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-500 hover:bg-indigo-500 hover:text-white flex items-center justify-center transition-colors"
+                                title="Edit"
+                              >
+                                <FaEdit className="text-xs" />
+                              </button>
+                              <button
+                                onClick={() => handleDelete(it._id)}
+                                className="w-7 h-7 rounded-lg bg-red-50 text-red-400 hover:bg-red-500 hover:text-white flex items-center justify-center transition-colors"
+                                title="Delete"
+                              >
+                                <FaTrash className="text-xs" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="px-5 py-4 border-t border-gray-100 flex items-center justify-between">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1 rounded-md bg-gray-100 text-gray-600 disabled:opacity-50 text-sm font-medium hover:bg-gray-200"
+              >
+                <FaChevronLeft className="inline mr-1 text-xs" /> Prev
+              </button>
+              <span className="text-sm text-gray-500">
+                Page {currentPage} of {totalPages}
+              </span>
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1 rounded-md bg-gray-100 text-gray-600 disabled:opacity-50 text-sm font-medium hover:bg-gray-200"
+              >
+                Next <FaChevronRight className="inline ml-1 text-xs" />
+              </button>
+            </div>
           </div>
         </div>
+        <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
       </div>
-      <style>{`@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}`}</style>
-    </div>
-  );
+    );
 
-  // FORM VIEW
+  // ── FORM VIEW ──
   return (
     <div className="min-h-screen bg-gray-50">
-      {showScanner && <QRScannerModal onScanSuccess={handleScanSuccess} onManual={handleManualEntry} onClose={() => setShowScanner(false)} />}
+      {showScanner && (
+        <QRScannerModal onScanSuccess={handleScanSuccess} onManual={handleManualEntry} onClose={() => setShowScanner(false)} />
+      )}
       <div className="max-w-screen-md mx-auto px-4 sm:px-6 py-6">
-        <button onClick={reset} className="flex items-center gap-2 text-sm font-semibold text-gray-500 hover:text-gray-800 mb-5"><FaArrowLeft className="text-xs" /> Back to Items</button>
+        <button onClick={reset} className="flex items-center gap-2 text-sm font-semibold text-gray-500 hover:text-gray-800 mb-5">
+          <FaArrowLeft className="text-xs" /> Back to Items
+        </button>
         <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
           <div className="px-6 pt-6 pb-0">
             <div className="flex items-center gap-0 mb-6 overflow-x-auto pb-2">
               {STEPS.map((s, idx) => {
-                const done = step > s.id, current = step === s.id;
+                const done = step > s.id,
+                  current = step === s.id;
                 const Icon = s.icon;
                 return (
                   <React.Fragment key={s.id}>
                     <div className="flex flex-col items-center gap-1 shrink-0">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${done ? "bg-emerald-500 text-white" : current ? "bg-indigo-600 text-white ring-4 ring-indigo-100" : "bg-gray-100 text-gray-300"}`}>{done ? <FaCheck className="text-[10px]" /> : <Icon className="text-[10px]" />}</div>
-                      <span className={`text-[9px] font-bold uppercase tracking-wider hidden sm:block ${current ? "text-indigo-600" : done ? "text-emerald-500" : "text-gray-300"}`}>{s.label}</span>
+                      <div
+                        className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${done
+                          ? "bg-emerald-500 text-white"
+                          : current
+                            ? "bg-indigo-600 text-white ring-4 ring-indigo-100"
+                            : "bg-gray-100 text-gray-300"
+                          }`}
+                      >
+                        {done ? <FaCheck className="text-[10px]" /> : <Icon className="text-[10px]" />}
+                      </div>
+                      <span
+                        className={`text-[9px] font-bold uppercase tracking-wider hidden sm:block ${current ? "text-indigo-600" : done ? "text-emerald-500" : "text-gray-300"
+                          }`}
+                      >
+                        {s.label}
+                      </span>
                     </div>
-                    {idx < STEPS.length - 1 && <div className={`flex-1 h-0.5 mx-1 transition-all ${step > s.id ? "bg-emerald-400" : "bg-gray-100"}`} />}
+                    {idx < STEPS.length - 1 && (
+                      <div className={`flex-1 h-0.5 mx-1 transition-all ${step > s.id ? "bg-emerald-400" : "bg-gray-100"}`} />
+                    )}
                   </React.Fragment>
                 );
               })}
             </div>
           </div>
-          <div className="px-6 pb-4 border-b border-gray-100"><h2 className="text-base font-extrabold text-gray-900">{STEPS[step-1].label}</h2><p className="text-xs text-gray-400 mt-0.5">Step {step} of {STEPS.length}</p></div>
+          <div className="px-6 pb-4 border-b border-gray-100">
+            <h2 className="text-base font-extrabold text-gray-900">{STEPS[step - 1].label}</h2>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Step {step} of {STEPS.length}
+            </p>
+          </div>
           <div className="px-6 py-5">{renderStep()}</div>
           <div className="px-6 py-4 border-t border-gray-100 flex justify-between gap-3">
-            <button onClick={goPrev} disabled={step === 1} className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-500 text-sm font-semibold disabled:opacity-30 hover:bg-gray-50"><FaChevronLeft className="text-xs" /> Back</button>
-            {step < STEPS.length ? <button onClick={goNext} className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700">Next <FaChevronRight className="text-xs" /></button> : <button onClick={handleSubmit} disabled={submitting} className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 disabled:opacity-60">{submitting ? <FaSpinner className="animate-spin" /> : <FaCheck />}{submitting ? "Saving…" : id._id ? "Update Item" : "Save Item"}</button>}
+            <button
+              onClick={goPrev}
+              disabled={step === 1}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-500 text-sm font-semibold disabled:opacity-30 hover:bg-gray-50"
+            >
+              <FaChevronLeft className="text-xs" /> Back
+            </button>
+            {step < STEPS.length ? (
+              <button
+                onClick={goNext}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700"
+              >
+                Next <FaChevronRight className="text-xs" />
+              </button>
+            ) : (
+              <button
+                onClick={handleSubmit}
+                disabled={submitting}
+                className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 disabled:opacity-60"
+              >
+                {submitting ? <FaSpinner className="animate-spin" /> : <FaCheck />}
+                {submitting ? "Saving…" : id._id ? "Update Item" : "Save Item"}
+              </button>
+            )}
           </div>
         </div>
       </div>
     </div>
   );
 }
-
-
-
-
-
-
-
-
-

@@ -3,7 +3,7 @@ import dbConnect from "@/lib/db";
 import Item from "@/models/ItemModels";
 import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
 
-// Role-based access (unchanged)
+// Role-based access
 function isAuthorized(user) {
   if (!user) return false;
   if (user.type === "company") return true;
@@ -66,7 +66,7 @@ export async function GET(req) {
       return NextResponse.json({ success: true, data: result });
     }
 
-    // 3) POS only (unchanged)
+    // 3) POS only
     if (posOnly) {
       const items = await Item.find({
         companyId: user.companyId,
@@ -78,12 +78,13 @@ export async function GET(req) {
       return NextResponse.json({ success: true, data: items });
     }
 
-    // 4) Paginated list – now includes tax fields
+    // 4) Paginated list
     const query = { companyId: user.companyId };
     if (search) {
       query.$or = [
         { itemName: { $regex: search, $options: "i" } },
         { itemCode: { $regex: search, $options: "i" } },
+        { serialNumber: { $regex: search, $options: "i" } }, // Added search by serial number
         { category: { $regex: search, $options: "i" } },
       ];
     }
@@ -94,7 +95,9 @@ export async function GET(req) {
     const skip = (page - 1) * limit;
     const [items, total] = await Promise.all([
       Item.find(query)
-        .select("itemCode itemName category imageUrl itemType unitPrice uom status posEnabled imageUrl manufacturer variants createdAt includeGST includeIGST gstCode gstName gstRate cgstRate sgstRate igstCode igstName igstRate")
+        .select(
+          "itemCode serialNumber itemName category imageUrl itemType unitPrice uom status posEnabled manufacturer variants createdAt includeGST includeIGST gstCode gstName gstRate cgstRate sgstRate igstCode igstName igstRate"
+        ) // Added serialNumber here
         .skip(skip)
         .limit(limit)
         .sort({ createdAt: -1 })

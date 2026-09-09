@@ -9,19 +9,17 @@ import {
   HiPuzzle, HiViewGrid, HiUser, HiDocumentText, HiOutlineOfficeBuilding,
   HiCube, HiShoppingCart, HiCog, HiMenu, HiX, HiHome, HiBell, HiCreditCard,
 } from "react-icons/hi";
-import { FiArrowLeft, FiEye, FiEyeOff,  FiLayers,
-  FiFileText,
-  FiCalendar,
-  FiUsers,
-  FiCheck,
-  FiList,
-  FiTool,
-  FiBox,
-  FiDollarSign,FiTruck , } from "react-icons/fi";
+import {
+  FiArrowLeft, FiEye, FiEyeOff, FiLayers,
+  FiFileText, FiCalendar, FiUsers, FiCheck,
+  FiList, FiTool, FiBox, FiDollarSign, FiTruck,
+} from "react-icons/fi";
 import { GiStockpiles } from "react-icons/gi";
 import { SiCivicrm } from "react-icons/si";
+import { FaRobot } from "react-icons/fa"; // 👈 AI Icon for sidebar button
 import LogoutButton from "@/components/LogoutButton";
 import Sidebar from "@/components/hr/Sidebar";
+import AISettingsModal from "@/components/AISettingsModal"; // 👈 AI Modal Component
 
 // ------------------------- Safe View Context -------------------------
 const SafeViewContext = createContext({ safeViewEnabled: false, toggleSafeView: () => {} });
@@ -69,7 +67,7 @@ export const maskEmail = (email, safeViewActive) => {
   return `${maskedLocal}@${maskedDomain}.${tld || ""}`;
 };
 
-// ------------------------- MODULE_ROUTE_MAP (complete – keep as is) -------------------------
+// ------------------------- MODULE_ROUTE_MAP -------------------------
 const MODULE_ROUTE_MAP = {
   "Sales Quotation": [
     { label: "Quotation View",   path: "/admin/sales-quotation-view", needsView: true },
@@ -112,7 +110,7 @@ const MODULE_ROUTE_MAP = {
     { label: "Users",            path: "/admin/users",                needsView: true },
   ],
   "Accounts": [
-    { label: "Account Head View", path: "/admin/account-head-view",       needsView: true },
+    { label: "Account Head View", path: "/admin/account-head-view",      needsView: true },
     { label: "General Ledger",    path: "/admin/bank-head-details-view",   needsView: true },
   ],
   "employees": [
@@ -157,7 +155,7 @@ const MODULE_ROUTE_MAP = {
     { label: "Inventory View",     path: "/admin/InventoryView",              needsView: true },
     { label: "Inventory Entry",    path: "/admin/InventoryEntry",             needsCreate: true },
     { label: "Inventory Ledger",   path: "/admin/InventoryAdjustmentsView",   needsView: true },
-    { label: "Gate Entry",         path: "/admin/gate-entry",                  needsCreate: true}
+    { label: "Gate Entry",         path: "/admin/gate-entry",                 needsCreate: true}
   ],
   "Production Order": [
     { label: "Production Order",   path: "/admin/ProductionOrder",            needsView: true },
@@ -359,6 +357,7 @@ export default function Layout({ children }) {
   const [openMenu, setOpenMenu] = useState(null);
   const [openSubmenus, setOpenSubmenus] = useState({});
   const [session, setSession] = useState(null);
+  const [isAiSettingsOpen, setIsAiSettingsOpen] = useState(false); // 👈 Controls AI modal visibility
   const router = useRouter();
   const pathname = usePathname();
   const sidebarRef = useRef(null);
@@ -382,7 +381,6 @@ export default function Layout({ children }) {
     }
   };
 
-  // fetch notifications (same as before)
   const fetchNotifications = async () => {
     try {
       const token = localStorage.getItem("token");
@@ -403,7 +401,6 @@ export default function Layout({ children }) {
   };
   useEffect(() => { fetchNotifications(); }, []);
 
-  // session check
   useEffect(() => {
     async function getSession() {
       try {
@@ -418,7 +415,6 @@ export default function Layout({ children }) {
     getSession();
   }, [router]);
 
-  // close sidebar on route change
   useEffect(() => { setIsSidebarOpen(false); }, [pathname]);
 
   if (!session) {
@@ -442,14 +438,12 @@ export default function Layout({ children }) {
 
   return (
     <SafeViewProvider>
-      {/* Root container: no overflow on this div – scrolling handled inside main */}
       <div className="flex h-screen overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100">
-        {/* Overlay for mobile */}
         {isSidebarOpen && (
           <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40 md:hidden" onClick={closeSidebar} aria-hidden="true" />
         )}
 
-        {/* SIDEBAR – fixed, does NOT scroll with page */}
+        {/* SIDEBAR */}
         <aside
           ref={sidebarRef}
           className={`fixed inset-y-0 left-0 z-50 w-80 bg-white/95 backdrop-blur-md shadow-2xl transform transition-transform duration-300 ease-out md:relative md:translate-x-0 md:shadow-xl md:w-72 ${
@@ -472,7 +466,6 @@ export default function Layout({ children }) {
           <nav className="flex-1 overflow-y-auto py-5 px-4 space-y-1">
             {hasFullAccess && (
               <>
-                {/* ========== Your complete sidebar sections (exactly as you had) ========== */}
                 <Section title="Masters" icon={<HiUsers />} isOpen={openMenu === "master"} onToggle={() => toggleMenu("master")}>
                   <SidebarItem href="/admin/Countries" icon={<HiGlobeAlt />} label="Countries" onClick={closeSidebar} isActive={isActive("/admin/Countries")} />
                   <SidebarItem href="/admin/State" icon={<HiFlag />} label="State" onClick={closeSidebar} isActive={isActive("/admin/State")} />
@@ -491,17 +484,6 @@ export default function Layout({ children }) {
                   <SidebarItem href="/admin/WarehouseDetailsForm" icon={<HiOutlineLibrary />} label="Warehouse Details" onClick={closeSidebar} isActive={isActive("/admin/WarehouseDetailsForm")} />
                   <SidebarItem href="/admin/backup-settings" icon={<HiOutlineLibrary />} label="Backup Settings" onClick={closeSidebar} isActive={isActive("/admin/backup-settings")} />
                 </Section>
-
-                {/* <Section title="Masters View" icon={<HiViewGrid />} isOpen={openMenu === "masterView"} onToggle={() => toggleMenu("masterView")}>
-                  <SidebarItem href="/admin/customer-view" icon={<HiUsers />} label="Customer View" onClick={closeSidebar} isActive={isActive("/admin/customer-view")} />
-                  <SidebarItem href="/admin/supplier" icon={<HiUserGroup />} label="Supplier View" onClick={closeSidebar} isActive={isActive("/admin/supplier")} />
-                  <SidebarItem href="/admin/item" icon={<HiCube />} label="Item View" onClick={closeSidebar} isActive={isActive("/admin/item")} />
-                  <SidebarItem href="/admin/account-bankhead" icon={<HiOutlineLibrary />} label="Account Head View" onClick={closeSidebar} isActive={isActive("/admin/account-bankhead")} />
-                  <SidebarItem href="/admin/bank-head-details" icon={<HiCurrencyDollar />} label="General Ledger View" onClick={closeSidebar} isActive={isActive("/admin/bank-head-details")} />
-                  <SidebarItem href="/admin/email-templates" icon={<HiDocumentText />} label="Email Templates" onClick={closeSidebar} isActive={isActive("/admin/email-templates")} />
-                  <SidebarItem href="/admin/email-masters" icon={<HiOutlineCreditCard />} label="Email & App Password Master" onClick={closeSidebar} isActive={isActive("/admin/email-masters")} />
-                  <SidebarItem href="/admin/price-list" icon={<HiOutlineOfficeBuilding />} label="Price List" onClick={closeSidebar} isActive={isActive("/admin/price-list")} />
-                </Section> */}
 
                 <Section title="Transactions View" icon={<HiOutlineCreditCard />} isOpen={openMenu === "transactionsView"} onToggle={() => toggleMenu("transactionsView")}>
                   <Submenu isOpen={!!openSubmenus["tvSales"]} onToggle={() => toggleSubmenu("tvSales")} icon={<HiShoppingCart />} label="Sales">
@@ -612,9 +594,6 @@ export default function Layout({ children }) {
                   <SidebarItem href="/admin/hr/payroll" icon={<HiUserGroup />} label="Payroll" onClick={closeSidebar} isActive={isActive("/admin/hr/payroll")} />
                   <SidebarItem href="/admin/hr/employees" icon={<HiUserGroup />} label="Employee" onClick={closeSidebar} isActive={isActive("/admin/hr/employees")} />
                   <SidebarItem href="/admin/hr/reports" icon={<HiUserGroup />} label="Reports" onClick={closeSidebar} isActive={isActive("/admin/hr/reports")} />
-                  {/* <SidebarItem href="/admin/hr/settings" icon={<HiCog />} label="Settings" onClick={closeSidebar} isActive={isActive("/admin/hr/settings")} /> */}
-                  {/* <SidebarItem href="/admin/hr/holidays" icon={<HiGlobeAlt />} label="Holidays" onClick={closeSidebar} isActive={isActive("/admin/hr/holidays")} /> */}
-                  {/* <SidebarItem href="/admin/hr/profile" icon={<HiUser />} label="Profile" onClick={closeSidebar} isActive={isActive("/admin/hr/profile")} /> */}
                 </Section>
 
                 <Section title="PPC" icon={<HiPuzzle />} isOpen={openMenu === "ppc"} onToggle={() => toggleMenu("ppc")}>
@@ -642,119 +621,124 @@ export default function Layout({ children }) {
                   <SidebarItem href="/admin/helpdesk/feedback/analytics" icon={<HiChartSquareBar />} label="Feedback Analysis" onClick={closeSidebar} isActive={isActive("/admin/helpdesk/feedback/analytics")} />
                   <SidebarItem href="/admin/helpdesk/report" icon={<HiChartSquareBar />} label="Report" onClick={closeSidebar} isActive={isActive("/admin/helpdesk/report")} />
                 </Section>
+
                 <Section title="Billing" icon={<HiCreditCard />} isOpen={openMenu === "billing"} onToggle={() => toggleMenu("billing")}>
                   <SidebarItem href="/admin/billing" icon={<HiOutlineOfficeBuilding />} label="Plans" onClick={closeSidebar} isActive={isActive("/admin/billing/plans")} />
-              
                 </Section>
 
-               
-                  {/* <Section title="Engineering" icon={<HiViewGrid />} isOpen={openMenu === "engneering"} onToggle={() => toggleMenu("engneering")}>
-                <SidebarItem href="/admin/Engineering/projects"  icon={<HiOutlineOfficeBuilding />} label="Project"  onClick={closeSidebar} isActive={isActive("/admin/Engineering/projects")} />
-                <SidebarItem href="/admin/Engineering/Boq"    icon={<HiOutlineCube />}           label="BOQ"    onClick={closeSidebar} isActive={isActive("/admin/Engineering/Boq")} />
-                <SidebarItem href="/admin/Engineering/DPR" icon={<HiPuzzle />}                label="DPR" onClick={closeSidebar} isActive={isActive("/admin/Engineering/DPR")} />
-                <SidebarItem href="/admin/Engineering/Workorder" icon={<HiPuzzle />}                label="Workorder" onClick={closeSidebar} isActive={isActive("/admin/Engineering/Workorder")} />
-                </Section> */}
-                
-                 <Section
-  title="Constructions"
-  icon={<HiViewGrid />}
-  isOpen={openMenu === "constructions"}
-  onToggle={() => toggleMenu("constructions")}
->
-  <SidebarItem
-    href="/admin/construction/projects"
-    icon={<FiLayers />}
-    label="Projects"
-    onClick={closeSidebar}
-    isActive={isActive("/admin/construction/projects")}
-  />
-  <SidebarItem
-    href="/admin/construction/boq"
-    icon={<FiFileText />}
-    label="BOQ"
-    onClick={closeSidebar}
-    isActive={isActive("/admin/construction/boq")}
-  />
-  <SidebarItem
-    href="/admin/construction/tenders"
-    icon={<FiBox />}
-    label="Tender"
-    onClick={closeSidebar}
-    isActive={isActive("/admin/construction/tenders")}
-  />
-  <SidebarItem
-    href="/admin/construction/daily-report"
-    icon={<FiCalendar />}
-    label="DPR"
-    onClick={closeSidebar}
-    isActive={isActive("/admin/construction/daily-report")}
-  />
-  <SidebarItem
-    href="/admin/construction/labour"
-    icon={<FiUsers />}
-    label="Labour"
-    onClick={closeSidebar}
-    isActive={isActive("/admin/construction/labour")}
-  />
-  <SidebarItem
-    href="/admin/construction/attendance"
-    icon={<FiCheck />}
-    label="Attendance"
-    onClick={closeSidebar}
-    isActive={isActive("/admin/construction/attendance")}
-  />
-  <SidebarItem
-    href="/admin/construction/work-assignment"
-    icon={<FiList />}
-    label="Work Assignments"
-    onClick={closeSidebar}
-    isActive={isActive("/admin/construction/work-assignment")}
-  />
-  <SidebarItem
-    href="/admin/construction/labour-work"
-    icon={<FiTool />}
-    label="Labour Work"
-    onClick={closeSidebar}
-    isActive={isActive("/admin/construction/labour-work")}
-  />
-  <SidebarItem
-    href="/admin/construction/progress-billing"
-    icon={<FiDollarSign />}
-    label="Progress Billing"
-    onClick={closeSidebar}
-    isActive={isActive("/admin/construction/progress-billing")}
-  />
-  <SidebarItem
-    href="/admin/construction/reports"
-    icon={<FiTool />}
-    label="Reports"
-    onClick={closeSidebar}
-    isActive={isActive("/admin/construction/reports")}
-  />
-  <SidebarItem
-    href="/admin/construction/purchase-indent"
-    icon={<FiDollarSign />}
-    label="Purchase Indent"
-    onClick={closeSidebar}
-    isActive={isActive("/admin/construction/purchase-indent")}
-  />
-  <SidebarItem
-    href="/admin/construction/work-orders"
-    icon={<FiList />}
-    label="Work Orders"
-    onClick={closeSidebar}
-    isActive={isActive("/admin/construction/work-orders")}
-  />
-  <SidebarItem
-    href="/admin/construction/stock-transfers"
-    icon={<FiTruck />}
-    label="Stock Transfers"
-    onClick={closeSidebar}
-    isActive={isActive("/admin/construction/stock-transfers")}
-  />
+                <Section
+                  title="Constructions"
+                  icon={<HiViewGrid />}
+                  isOpen={openMenu === "constructions"}
+                  onToggle={() => toggleMenu("constructions")}
+                >
+                  <SidebarItem
+                    href="/admin/construction/projects"
+                    icon={<FiLayers />}
+                    label="Projects"
+                    onClick={closeSidebar}
+                    isActive={isActive("/admin/construction/projects")}
+                  />
+                  <SidebarItem
+                    href="/admin/construction/boq"
+                    icon={<FiFileText />}
+                    label="BOQ"
+                    onClick={closeSidebar}
+                    isActive={isActive("/admin/construction/boq")}
+                  />
+                  <SidebarItem
+                    href="/admin/construction/tenders"
+                    icon={<FiBox />}
+                    label="Tender"
+                    onClick={closeSidebar}
+                    isActive={isActive("/admin/construction/tenders")}
+                  />
+                  <SidebarItem
+                    href="/admin/construction/daily-report"
+                    icon={<FiCalendar />}
+                    label="DPR"
+                    onClick={closeSidebar}
+                    isActive={isActive("/admin/construction/daily-report")}
+                  />
+                  <SidebarItem
+                    href="/admin/construction/labour"
+                    icon={<FiUsers />}
+                    label="Labour"
+                    onClick={closeSidebar}
+                    isActive={isActive("/admin/construction/labour")}
+                  />
+                  <SidebarItem
+                    href="/admin/construction/attendance"
+                    icon={<FiCheck />}
+                    label="Attendance"
+                    onClick={closeSidebar}
+                    isActive={isActive("/admin/construction/attendance")}
+                  />
+                  <SidebarItem
+                    href="/admin/construction/work-assignment"
+                    icon={<FiList />}
+                    label="Work Assignments"
+                    onClick={closeSidebar}
+                    isActive={isActive("/admin/construction/work-assignment")}
+                  />
+                  <SidebarItem
+                    href="/admin/construction/labour-work"
+                    icon={<FiTool />}
+                    label="Labour Work"
+                    onClick={closeSidebar}
+                    isActive={isActive("/admin/construction/labour-work")}
+                  />
+                  <SidebarItem
+                    href="/admin/construction/progress-billing"
+                    icon={<FiDollarSign />}
+                    label="Progress Billing"
+                    onClick={closeSidebar}
+                    isActive={isActive("/admin/construction/progress-billing")}
+                  />
+                  <SidebarItem
+                    href="/admin/construction/reports"
+                    icon={<FiTool />}
+                    label="Reports"
+                    onClick={closeSidebar}
+                    isActive={isActive("/admin/construction/reports")}
+                  />
+                  <SidebarItem
+                    href="/admin/construction/purchase-indent"
+                    icon={<FiDollarSign />}
+                    label="Purchase Indent"
+                    onClick={closeSidebar}
+                    isActive={isActive("/admin/construction/purchase-indent")}
+                  />
+                  <SidebarItem
+                    href="/admin/construction/work-orders"
+                    icon={<FiList />}
+                    label="Work Orders"
+                    onClick={closeSidebar}
+                    isActive={isActive("/admin/construction/work-orders")}
+                  />
+                  <SidebarItem
+                    href="/admin/construction/stock-transfers"
+                    icon={<FiTruck />}
+                    label="Stock Transfers"
+                    onClick={closeSidebar}
+                    isActive={isActive("/admin/construction/stock-transfers")}
+                  />
+                </Section>
 
-</Section>
-                
+                <Section
+                  title="BOQ"
+                  icon={<HiViewGrid />}
+                  isOpen={openMenu === "boq"}
+                  onToggle={() => toggleMenu("boq")}
+                >
+                  <SidebarItem
+                    href="/admin/construction/boq"
+                    icon={<FiFileText />}
+                    label="BOQ"
+                    onClick={closeSidebar}
+                    isActive={isActive("/admin/construction/boq")}
+                  />
+                </Section>
               </>
             )}
 
@@ -779,7 +763,21 @@ export default function Layout({ children }) {
                 );
               })}
 
-            <div className="pt-5 mt-5 border-t border-gray-200/50">
+            {/* ── BOTTOM SIDEBAR CONTROLS (AI Settings + Logout) ── */}
+            <div className="pt-4 mt-5 border-t border-gray-200/50 space-y-2">
+              {/* 🤖 AI Settings Button */}
+              <button
+                type="button"
+                onClick={() => setIsAiSettingsOpen(true)}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-700 hover:bg-purple-50 hover:text-purple-700 transition-all duration-200 group"
+              >
+                <div className="w-7 h-7 rounded-lg bg-purple-100 text-purple-600 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <FaRobot size={14} />
+                </div>
+                <span className="truncate font-semibold text-xs">AI Settings</span>
+              </button>
+
+              {/* Logout Button */}
               <LogoutButton />
             </div>
           </nav>
@@ -787,7 +785,6 @@ export default function Layout({ children }) {
 
         {/* MAIN CONTENT AREA */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          {/* Header with top safe area – uses CSS variables set by your PhoneSafeView */}
           <header
             className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-gray-200/50 shadow-sm shrink-0"
             style={{ paddingTop: "var(--safe-top, env(safe-area-inset-top, 0px))" }}
@@ -837,7 +834,6 @@ export default function Layout({ children }) {
 
           <SafeViewBanner />
 
-          {/* Main content – safe bottom area */}
           <main
             ref={mainContentRef}
             className="flex-1 overflow-y-auto p-4 md:p-6"
@@ -847,6 +843,12 @@ export default function Layout({ children }) {
           </main>
         </div>
       </div>
+
+      {/* Global AI Settings Modal mounted at root layout */}
+      <AISettingsModal
+        isOpen={isAiSettingsOpen}
+        onClose={() => setIsAiSettingsOpen(false)}
+      />
     </SafeViewProvider>
   );
 }
