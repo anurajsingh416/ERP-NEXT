@@ -805,6 +805,17 @@ function isTotalRow(value) {
   return text === "TOTAL" || text === "SUB TOTAL" || text.startsWith("TOTAL ");
 }
 
+// ─── Helper to identify valid billable raw materials vs empty scope headers ───
+function isBillableChildLine(desc) {
+  const qty = Number(desc.quantity ?? desc.qty) || 0;
+  const supplyRate = Number(desc.unitRateSupply) || 0;
+  const installRate = Number(desc.unitRateInstallation) || 0;
+  const isRateOnly = Boolean(desc.isRateOnly);
+
+  // Billable if marked as Rate Only OR has quantity with valid rates
+  return isRateOnly || (qty > 0 && (supplyRate > 0 || installRate > 0));
+}
+
 function findHeaderRow(rows) {
   for (let i = 0; i < rows.length; i++) {
     const c0 = clean(rows[i]?.[0]).toUpperCase();
@@ -832,29 +843,31 @@ function parseExcelRows(rows, startRow) {
 
     const hasRates = unitRateSupply > 0 || unitRateInstallation > 0;
     const hasQty = rawQtyStr !== "" && !isNaN(parseFloat(rawQtyStr));
+    // const isRateOnly =
+    //   rawQtyStr.toUpperCase() === "RATE ONLY" ||
+    //   rawAmountCol6.toUpperCase() === "RATE ONLY" ||
+    //   (!hasQty && hasRates);
+
+    // const quantity = isRateOnly ? 0 : number(rawQtyStr);
+
+    // Only treat as Rate Only if the cell explicitly says "RATE ONLY"
     const isRateOnly =
       rawQtyStr.toUpperCase() === "RATE ONLY" ||
-      rawAmountCol6.toUpperCase() === "RATE ONLY" ||
-      (!hasQty && hasRates);
+      rawAmountCol6.toUpperCase() === "RATE ONLY";
 
-    const quantity = isRateOnly ? 0 : number(rawQtyStr);
+    // If quantity is missing but rates exist, default qty to 1
+    const quantity = isRateOnly
+      ? 0
+      : (hasQty ? number(rawQtyStr) : (hasRates ? 1 : 0));
 
     if (!srNo && !description && !hasQty && !hasRates) continue;
     if (description === "." || isPreambleRow(srNo) || isPreambleRow(description)) continue;
     if (isTotalRow(srNo) || isTotalRow(description)) continue;
 
+    // Handle Parent Item Headers (e.g., 1000, 1100, 2000)
     if (isParentItemNumber(srNo)) {
       if (currentParent && currentParent.itemSerialNo === srNo) {
-        currentParent.descriptions.push({
-          srNo,
-          description,
-          unit: "—",
-          quantity: 0,
-          unitRateSupply: 0,
-          unitRateInstallation: 0,
-          isRateOnly: false,
-        });
-        continue;
+        continue; // Skip adding duplicate empty descriptions
       }
 
       currentParent = {
@@ -872,10 +885,17 @@ function parseExcelRows(rows, startRow) {
 
     if (!currentParent || !description) continue;
 
+    // Handle multi-line specification notes that continue the previous row
     if (!srNo && description.startsWith("(") && !hasQty && !hasRates) {
       if (currentParent.descriptions.length > 0) {
         currentParent.descriptions[currentParent.descriptions.length - 1].description += `\n${description}`;
       }
+      continue;
+    }
+
+    // ── OPTION 2: Skip empty scope/header lines (e.g. 1002, 1101) ──
+    // If it has no billable quantity, no supply/install rates, and is not rate-only, ignore it
+    if (!hasQty && !hasRates && !isRateOnly) {
       continue;
     }
 
@@ -900,7 +920,6 @@ function parseExcelRows(rows, startRow) {
 
   return parents.filter((p) => p.descriptions.length > 0);
 }
-
 async function getNextItemCode(companyId) {
   const lastItem = await Item.findOne({
     companyId,
@@ -915,10 +934,6 @@ async function getNextItemCode(companyId) {
   return `ITEM-${String(num + 1).padStart(5, "0")}`;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// POST ROUTE: Supports "analyze" & "confirm"
-// ─────────────────────────────────────────────────────────────────────────────
-
 export async function POST(req) {
   await dbConnect();
   const { user, error, status } = await validateUser(req);
@@ -930,7 +945,7 @@ export async function POST(req) {
     const contentType = req.headers.get("content-type") || "";
 
     // ─────────────────────────────────────────────────────────────────────────
-    // STAGE 2: CONFIRM & PERSIST TO ITEM MASTER (Finished Goods + Raw Materials)
+    // STAGE 2: CONFIRM & PERSIST TO ITEM MASTER
     // ─────────────────────────────────────────────────────────────────────────
     if (contentType.includes("application/json")) {
       const { projectId, contractorId, customerId, phase, mappedParents } = await req.json();
@@ -958,13 +973,12 @@ export async function POST(req) {
       const boqItems = [];
 
       for (const parent of mappedParents) {
-        // ✅ 1. Always use the user-reviewed AI-cleaned item name for Category
         const cleanParentName = (parent.itemName || "").trim();
         if (!cleanParentName) continue;
-        const cleanCategory = cleanParentName; // Prevents saving the raw typo-filled Excel string
+        const cleanCategory = cleanParentName;
         const normParentKey = canonicalizeText(cleanParentName);
 
-        // ── STEP 2A: Process/Upsert Each Child Line as a "Raw Material" ──
+        // ── STEP 2A: Process Child Lines ──
         const resolvedRawMaterialsForParent = [];
         const resolvedBOQDescriptions = [];
         let parentSupplyTotal = 0;
@@ -973,8 +987,32 @@ export async function POST(req) {
         for (const desc of parent.descriptions || []) {
           const descText = (desc.description || "").trim();
           if (!descText) continue;
-          const normDescKey = canonicalizeText(descText);
 
+          // ⚠️ CHECK IF ROW IS AN EMPTY HEADER / SCOPE LINE (e.g. 1002)
+          const isBillable = isBillableChildLine(desc);
+
+          if (!isBillable) {
+            // Keep in BOQ hierarchy as a scope header, but DO NOT save in Item Master
+            resolvedBOQDescriptions.push({
+              itemId: null,
+              srNo: desc.srNo || "",
+              description: descText,
+              unit: "—",
+              quantity: 0,
+              unitRateSupply: 0,
+              unitRateInstallation: 0,
+              amountSupply: 0,
+              amountInstallation: 0,
+              totalAmount: 0,
+              amount: 0,
+              isRateOnly: false,
+              isHeader: true,
+            });
+            continue; // 👈 Skip Raw Material creation entirely
+          }
+
+          // ── Legitimate Raw Materials with Quantity & Rates ──
+          const normDescKey = canonicalizeText(descText);
           const supplyRate = Number(desc.unitRateSupply) || 0;
           const installRate = Number(desc.unitRateInstallation) || 0;
           const isRateOnly = Boolean(desc.isRateOnly);
@@ -984,10 +1022,8 @@ export async function POST(req) {
           const installAmt = isRateOnly ? installRate : qty * installRate;
           const totalAmt = supplyAmt + installAmt;
 
-          // Unit Price fallback: if rate is provided, use rate sum; otherwise total amount
-          const effectiveUnitPrice = (supplyRate + installRate) > 0
-            ? (supplyRate + installRate)
-            : totalAmt;
+          const effectiveUnitPrice =
+            supplyRate + installRate > 0 ? supplyRate + installRate : totalAmt;
 
           parentSupplyTotal += supplyAmt;
           parentInstallTotal += installAmt;
@@ -1022,7 +1058,6 @@ export async function POST(req) {
               serialNumber: desc.srNo || "",
               itemName: descText,
               description: descText,
-              // ✅ Cleaned Category
               category: cleanCategory,
               itemType: "Raw Material",
               unit: (desc.unit || "nos").toLowerCase(),
@@ -1043,7 +1078,6 @@ export async function POST(req) {
             rawMaterialDoc = newRawMat;
             rawMaterialMap.set(normDescKey, newRawMat);
           } else {
-            // Update rates and amounts on existing Raw Material if merging
             await Item.updateOne(
               { _id: rawMaterialDoc._id },
               {
@@ -1092,10 +1126,11 @@ export async function POST(req) {
             totalAmount: totalAmt,
             amount: totalAmt,
             isRateOnly,
+            isHeader: false,
           });
         }
 
-        // ── STEP 2B: Upsert Parent Product ──
+        // ── STEP 2B: Upsert Parent Product (Untouched) ──
         let productDoc = null;
 
         if (parent.action === "merge" && parent.selectedMasterId) {
@@ -1177,7 +1212,7 @@ export async function POST(req) {
         phase: phase || "I",
         date: new Date(),
         status: "draft",
-        remarks: `Imported with linked BOM on ${new Date().toLocaleDateString()}`,
+        remarks: "",
         items: boqItems,
         materials: [],
         taxVAT: 0,
@@ -1217,7 +1252,6 @@ export async function POST(req) {
       return NextResponse.json({ success: false, message: "No items parsed from Excel." }, { status: 400 });
     }
 
-    // Fetch Item Master separated by type
     const allMasterItems = await Item.find({ companyId: targetCompanyId })
       .select(
         "_id itemCode itemName description itemType unit uom quantity unitPrice unitRateSupply unitRateInstallation amountSupply amountInstallation totalAmount rawMaterials"
@@ -1227,7 +1261,6 @@ export async function POST(req) {
     const masterProducts = allMasterItems.filter((i) => i.itemType !== "Raw Material");
     const masterRawMaterials = allMasterItems.filter((i) => i.itemType === "Raw Material");
 
-    // Unified AI Clean batching
     const aiPayload = [];
     parents.forEach((parent, pIdx) => {
       aiPayload.push({ id: `parent-${pIdx}`, itemName: parent.itemName || "", description: "" });
@@ -1268,6 +1301,7 @@ export async function POST(req) {
 
       // ── MATCH CHILD LINES ONLY AGAINST RAW MATERIALS ──
       const analyzedDescriptions = (parent.descriptions || []).map((desc, dIdx) => {
+        const isBillable = isBillableChildLine(desc);
         const childAiClean = aiMap.get(`desc-${pIdx}-${dIdx}`);
         const rawDesc = (desc.description || "").trim();
         const suggestedDesc = childAiClean?.correctedDescription?.trim() || rawDesc;
@@ -1276,6 +1310,26 @@ export async function POST(req) {
           suggestedDesc.toLowerCase() !== rawDesc.toLowerCase();
 
         if (childHasAiChange) totalAiSuggestionsCount++;
+
+        // If it's an empty header row like 1002, do NOT try to match it to master Raw Materials
+        if (!isBillable) {
+          return {
+            ...desc,
+            id: `desc-${pIdx}-${dIdx}`,
+            originalDescription: rawDesc,
+            description: suggestedDesc,
+            suggestedDescription: suggestedDesc,
+            hasAiSuggestion: childHasAiChange,
+            useAiSuggestion: childHasAiChange,
+            matchedMasterItem: null,
+            matchedDescriptionText: null,
+            matchScore: 0,
+            status: "header_clause",
+            action: "ignore",
+            selectedMasterId: null,
+            isScopeHeader: true,
+          };
+        }
 
         const normSuggested = canonicalizeText(suggestedDesc);
         const normOriginal = canonicalizeText(rawDesc);
@@ -1313,6 +1367,7 @@ export async function POST(req) {
           status: matchPercent >= 85 ? "in_master" : isMatched ? "suggested_match" : "not_in_master",
           action: matchPercent >= 85 ? "merge" : "create_new",
           selectedMasterId: matchPercent >= 85 && bestRawMat ? bestRawMat._id : null,
+          isScopeHeader: false,
         };
       });
 

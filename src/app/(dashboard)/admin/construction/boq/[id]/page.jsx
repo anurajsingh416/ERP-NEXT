@@ -1452,6 +1452,30 @@ export default function BOQDetailsPage() {
   const [addItemsSelected, setAddItemsSelected] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
 
+  // ─── Sales Invoice Generator State  ──────────────
+  const [isItemInvoiceModalOpen, setIsItemInvoiceModalOpen] = useState(false);
+  const [invoiceMode, setInvoiceMode] = useState("item"); // "item" | "full_boq"
+  const [selectedInvoiceItem, setSelectedInvoiceItem] = useState(null);
+  const [invoiceLines, setInvoiceLines] = useState([]); // Editable line items
+  const [invoiceGstRate, setInvoiceGstRate] = useState(0); // 1. Editable GST Rate
+  const [warehouses, setWarehouses] = useState([]);
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState("");
+  const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split("T")[0]);
+  const [invoiceDueDate, setInvoiceDueDate] = useState("");
+  const [invoiceOrderDate, setInvoiceOrderDate] = useState("");
+  const [invoiceRefNumber, setInvoiceRefNumber] = useState("");
+  const [invoiceRemarks, setInvoiceRemarks] = useState("");
+  const [invoiceFreight, setInvoiceFreight] = useState(0);
+  const [invoiceRounding, setInvoiceRounding] = useState(0);
+  const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [paidAmountInput, setPaidAmountInput] = useState(0);
+  const [invoiceAttachments, setInvoiceAttachments] = useState([]);
+  const [generatingInvoice, setGeneratingInvoice] = useState(false);
+  const [invoiceCustomerId, setInvoiceCustomerId] = useState("");
+  const [invoiceCustomerName, setInvoiceCustomerName] = useState("");
+  const [invoiceCustomerCode, setInvoiceCustomerCode] = useState("");
+  const [invoiceContactPerson, setInvoiceContactPerson] = useState("");
+
   // ─── Fetch BOQ + related data ──────────────────────────────────────
   useEffect(() => {
     const fetchData = async () => {
@@ -1505,6 +1529,32 @@ export default function BOQDetailsPage() {
     };
     fetchData();
   }, [id, router]);
+
+  // Warehouse fetch with dual endpoint fallback & token validation
+  useEffect(() => {
+    const fetchWarehouses = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        if (!token) return;
+        const headers = { headers: { Authorization: `Bearer ${token}` } };
+
+        let res;
+        try {
+          res = await api.get("/warehouses", headers);
+        } catch {
+          res = await api.get("/warehouse", headers);
+        }
+
+        const data = res.data?.data || res.data || [];
+        const list = Array.isArray(data) ? data : [];
+        setWarehouses(list);
+        if (list.length > 0) setSelectedWarehouseId(list[0]._id);
+      } catch (err) {
+        console.warn("Could not load warehouses:", err);
+      }
+    };
+    fetchWarehouses();
+  }, []);
 
   // ─── Fetch general inventory items from Master ─────────────────────
   useEffect(() => {
@@ -2018,6 +2068,366 @@ export default function BOQDetailsPage() {
     );
   }
 
+  // ─── Trigger 1: Single Item Invoice ─────────────────────────────────
+  const openItemInvoiceModal = (parentItem, sectionName) => {
+    if (!parentItem) return;
+    setInvoiceMode("item");
+
+    const defaultCust = boq?.customer;
+    const initialCustId = defaultCust?._id || defaultCust || "";
+    setInvoiceCustomerId(initialCustId);
+
+    if (defaultCust && typeof defaultCust === "object") {
+      setInvoiceCustomerName(defaultCust.customerName || defaultCust.name || "");
+      setInvoiceCustomerCode(defaultCust.customerCode || defaultCust.code || "—");
+      setInvoiceContactPerson(defaultCust.contactPersonName || defaultCust.contactPerson || "—");
+    } else if (initialCustId) {
+      // Find from customers array if boq.customer was just an ID string
+      const matched = customers.find((c) => String(c._id) === String(initialCustId));
+      setInvoiceCustomerName(matched?.customerName || matched?.name || "");
+      setInvoiceCustomerCode(matched?.customerCode || matched?.code || "—");
+      setInvoiceContactPerson(matched?.contactPersonName || matched?.contactPerson || "—");
+    } else {
+      setInvoiceCustomerName("");
+      setInvoiceCustomerCode("");
+      setInvoiceContactPerson("");
+    }
+
+    const lines = (parentItem.descriptions || []).map((desc) => {
+      const isHeader =
+        (!desc.quantity || Number(desc.quantity) === 0) &&
+        (!desc.unitRateSupply || Number(desc.unitRateSupply) === 0) &&
+        (!desc.unitRateInstallation || Number(desc.unitRateInstallation) === 0);
+
+      const initialQty = isHeader ? 0 : Number(desc.quantity) || 1;
+
+      return {
+        _id: desc._id,
+        itemId: desc.itemId || null,
+        parentItemId: parentItem._id,
+        parentName: parentItem.itemName,
+        srNo: desc.srNo || "",
+        description: desc.description || "",
+        unit: desc.unit || "nos",
+        quantity: initialQty, // Single Qty column
+        unitRateSupply: Number(desc.unitRateSupply) || 0,
+        unitRateInstallation: Number(desc.unitRateInstallation) || 0,
+        isHeader,
+        selected: !isHeader,
+        materials: desc.materials || [],
+      };
+    });
+
+    setSelectedInvoiceItem({
+      parentItem,
+      sectionName,
+      itemName: parentItem.itemName,
+      itemSerialNo: parentItem.itemSerialNo,
+      scopeExplanation: parentItem.sectionSpecification || "",
+    });
+
+    setInvoiceLines(lines);
+    setInvoiceGstRate(0);
+    setInvoiceDate(new Date().toISOString().split("T")[0]);
+    setInvoiceDueDate("");
+    setInvoiceOrderDate(boq?.date ? new Date(boq.date).toISOString().split("T")[0] : "");
+    setInvoiceRefNumber(boq?.boqNumber || "");
+    setInvoiceRemarks(parentItem.sectionSpecification || "");
+    setInvoiceFreight(0);
+    setInvoiceRounding(0);
+    setPaidAmountInput(0);
+    setIsItemInvoiceModalOpen(true);
+  };
+
+  // ─── Trigger 2: Full BOQ Invoice ────────────────────────────────────
+  const openFullBoqInvoiceModal = () => {
+    if (!boq || !Array.isArray(boq.items)) return;
+    setInvoiceMode("full_boq");
+
+    const defaultCust = boq?.customer;
+    const initialCustId = defaultCust?._id || defaultCust || "";
+    setInvoiceCustomerId(initialCustId);
+
+    if (defaultCust && typeof defaultCust === "object") {
+      setInvoiceCustomerName(defaultCust.customerName || defaultCust.name || "");
+      setInvoiceCustomerCode(defaultCust.customerCode || defaultCust.code || "—");
+      setInvoiceContactPerson(defaultCust.contactPersonName || defaultCust.contactPerson || "—");
+    } else if (initialCustId) {
+      // Find from customers array if boq.customer was just an ID string
+      const matched = customers.find((c) => String(c._id) === String(initialCustId));
+      setInvoiceCustomerName(matched?.customerName || matched?.name || "");
+      setInvoiceCustomerCode(matched?.customerCode || matched?.code || "—");
+      setInvoiceContactPerson(matched?.contactPersonName || matched?.contactPerson || "—");
+    } else {
+      setInvoiceCustomerName("");
+      setInvoiceCustomerCode("");
+      setInvoiceContactPerson("");
+    }
+
+    const allLines = [];
+    boq.items.forEach((parent) => {
+      (parent.descriptions || []).forEach((desc) => {
+        const isHeader =
+          (!desc.quantity || Number(desc.quantity) === 0) &&
+          (!desc.unitRateSupply || Number(desc.unitRateSupply) === 0) &&
+          (!desc.unitRateInstallation || Number(desc.unitRateInstallation) === 0);
+
+        const initialQty = isHeader ? 0 : Number(desc.quantity) || 1;
+
+        allLines.push({
+          _id: desc._id,
+          itemId: desc.itemId || null,
+          parentItemId: parent._id,
+          parentName: parent.itemName,
+          sectionName: parent.section || "Other Work",
+          srNo: desc.srNo || "",
+          description: desc.description || "",
+          unit: desc.unit || "nos",
+          quantity: initialQty,
+          unitRateSupply: Number(desc.unitRateSupply) || 0,
+          unitRateInstallation: Number(desc.unitRateInstallation) || 0,
+          isHeader,
+          selected: !isHeader,
+          materials: desc.materials || [],
+        });
+      });
+    });
+
+    setSelectedInvoiceItem({
+      parentItem: null,
+      sectionName: "All Sections",
+      itemName: `Full BOQ (${boq.boqNumber})`,
+      itemSerialNo: boq.boqNumber,
+      scopeExplanation: boq.remarks || "",
+    });
+
+    setInvoiceLines(allLines);
+    setInvoiceGstRate(0);
+    setInvoiceDate(new Date().toISOString().split("T")[0]);
+    setInvoiceDueDate("");
+    setInvoiceOrderDate(boq?.date ? new Date(boq.date).toISOString().split("T")[0] : "");
+    setInvoiceRefNumber(boq?.boqNumber || "");
+    setInvoiceRemarks(boq.remarks || "");
+    setInvoiceFreight(0);
+    setInvoiceRounding(0);
+    setPaidAmountInput(0);
+    setIsItemInvoiceModalOpen(true);
+  };
+
+  const handleCustomerSelect = (selectedId) => {
+    setInvoiceCustomerId(selectedId);
+
+    const matched = customers.find(
+      (c) => String(c._id) === String(selectedId)
+    );
+
+    if (matched) {
+      setInvoiceCustomerName(matched.customerName || matched.name || "");
+      setInvoiceCustomerCode(matched.customerCode || matched.code || "—");
+      setInvoiceContactPerson(matched.contactPersonName || matched.contactPerson || "—");
+    } else {
+      setInvoiceCustomerName("");
+      setInvoiceCustomerCode("");
+      setInvoiceContactPerson("");
+    }
+  };
+
+  // ─── Toggle Line Selection & Auto-Toggle Underneath Lines ───────────
+  const toggleLine = (lineId) => {
+    setInvoiceLines((prev) => {
+      const target = prev.find((l) => l._id === lineId);
+      if (!target) return prev;
+
+      const newSelected = !target.selected;
+
+      // If a header row is clicked, select/deselect all subsequent lines belonging to it
+      if (target.isHeader) {
+        const targetPrefix = target.srNo.trim();
+        return prev.map((l) => {
+          if (l._id === lineId) return { ...l, selected: newSelected };
+          if (l.srNo && l.srNo.startsWith(targetPrefix + ".")) {
+            return { ...l, selected: newSelected };
+          }
+          return l;
+        });
+      }
+
+      return prev.map((l) => (l._id === lineId ? { ...l, selected: newSelected } : l));
+    });
+  };
+
+  const handleSingleQtyChange = (lineId, val) => {
+    const newQty = parseFloat(val) || 0;
+    setInvoiceLines((prev) =>
+      prev.map((l) => (l._id === lineId ? { ...l, quantity: newQty } : l))
+    );
+  };
+
+  const handleLineQtyChange = (lineId, field, val) => {
+    setSelectedInvoiceItem((prev) => ({
+      ...prev,
+      lines: prev.lines.map((ln) =>
+        ln._id === lineId ? { ...ln, [field]: parseFloat(val) || 0 } : ln
+      ),
+    }));
+  };
+
+  const toggleLineSelection = (lineId) => {
+    setSelectedInvoiceItem((prev) => ({
+      ...prev,
+      lines: prev.lines.map((ln) =>
+        ln._id === lineId ? { ...ln, selected: !ln.selected } : ln
+      ),
+    }));
+  };
+
+  //SALES INVOICE GENERATION SECTION
+
+  const handleConfirmSalesInvoice = async (e) => {
+    e.preventDefault();
+
+    const activeLines = invoiceLines.filter((l) => l.selected && !l.isHeader);
+    if (activeLines.length === 0) {
+      toast.error("Please select at least one billable item row.");
+      return;
+    }
+
+    const defaultWarehouse = selectedWarehouseId || warehouses[0]?._id || null;
+    const defaultWarehouseName =
+      warehouses.find((w) => w._id === defaultWarehouse)?.warehouseName || "Main Warehouse";
+
+    const formattedItems = [];
+    activeLines.forEach((line) => {
+      const qty = parseFloat(line.quantity) || 0;
+      if (qty <= 0) return;
+
+      // 1. Supply Line
+      if (line.unitRateSupply > 0) {
+        const supplyAmt = qty * line.unitRateSupply;
+        const supplyGst = (supplyAmt * (Number(invoiceGstRate) || 0)) / 100;
+
+        formattedItems.push({
+          item: line.itemId || null,
+          itemCode: line.srNo || "ITEM",
+          itemName: `${line.description} (Supply)`,
+          quantity: qty,
+          unitPrice: line.unitRateSupply,
+          discount: 0,
+          amount: supplyAmt,
+          totalAmount: supplyAmt, // 👈 Required by SalesInvoiceView
+          taxOption: "GST",
+          gstRate: Number(invoiceGstRate) || 0, // 👈 Required by SalesInvoiceView
+          cgstAmount: supplyGst / 2, // 👈 Required by SalesInvoiceView
+          sgstAmount: supplyGst / 2, // 👈 Required by SalesInvoiceView
+          taxAmount: supplyGst,
+          warehouse: defaultWarehouse,
+          warehouseName: defaultWarehouseName,
+        });
+      }
+
+      // 2. Installation Line
+      if (line.unitRateInstallation > 0) {
+        const installAmt = qty * line.unitRateInstallation;
+        const installGst = (installAmt * (Number(invoiceGstRate) || 0)) / 100;
+
+        formattedItems.push({
+          item: line.itemId || null,
+          itemCode: line.srNo || "ITEM",
+          itemName: `${line.description} (Installation)`,
+          quantity: qty,
+          unitPrice: line.unitRateInstallation,
+          discount: 0,
+          amount: installAmt,
+          totalAmount: installAmt, // 👈 Required by SalesInvoiceView
+          taxOption: "GST",
+          gstRate: Number(invoiceGstRate) || 0, // 👈 Required by SalesInvoiceView
+          cgstAmount: installGst / 2, // 👈 Required by SalesInvoiceView
+          sgstAmount: installGst / 2, // 👈 Required by SalesInvoiceView
+          taxAmount: installGst,
+          warehouse: defaultWarehouse,
+          warehouseName: defaultWarehouseName,
+        });
+      }
+    });
+
+    if (formattedItems.length === 0) {
+      toast.error("All selected items have 0 billable quantities or rates.");
+      return;
+    }
+
+    const subTotal = formattedItems.reduce((acc, it) => acc + it.totalAmount, 0);
+    const gstTotal = (subTotal * (Number(invoiceGstRate) || 0)) / 100;
+    const freight = parseFloat(invoiceFreight) || 0;
+    const rounding = parseFloat(invoiceRounding) || 0;
+    const grandTotal = subTotal + gstTotal + freight + rounding;
+    const initialPaid = Math.min(parseFloat(paidAmountInput) || 0, grandTotal);
+    const openBalance = Math.max(0, grandTotal - initialPaid);
+
+    // ── Exact Schema Keys Required by SalesInvoiceView ──
+    const invoicePayload = {
+      sourceModel: "delivery",
+      sourceId: boq._id,
+      customer: invoiceCustomerId || null,
+      customerName: invoiceCustomerName || "Customer",
+      customerCode: invoiceCustomerCode || "—", // 👈 Required by SalesInvoiceView
+      contactPerson: invoiceContactPerson || "—", // 👈 Required by SalesInvoiceView
+      invoiceDate: invoiceDate || new Date().toISOString().split("T")[0],
+      dueDate: invoiceDueDate || null,
+      orderDate: invoiceOrderDate || null,
+      refNumber: invoiceRefNumber || boq.boqNumber || "",
+      remarks: invoiceRemarks || "",
+      items: formattedItems,
+      totalBeforeDiscount: subTotal, // 👈 Required by SalesInvoiceView
+      subTotal,
+      gstTotal, // 👈 Required by SalesInvoiceView
+      taxTotal: gstTotal,
+      freight,
+      rounding,
+      grandTotal,
+      paidAmount: initialPaid,
+      remainingAmount: openBalance,
+      openBalance, // 👈 Required by SalesInvoiceView
+      totalDownPayment: 0,
+      paymentMethod,
+      paymentStatus: initialPaid === 0 ? "Pending" : initialPaid >= grandTotal ? "Paid" : "Partial",
+      payments: initialPaid > 0 ? [{
+        amount: initialPaid,
+        method: paymentMethod,
+        paymentDate: invoiceDate || new Date(),
+        notes: "Payment recorded at invoice creation",
+      }] : [],
+      status: "Open",
+    };
+
+    setGeneratingInvoice(true);
+    try {
+      const token = localStorage.getItem("token");
+      const formData = new FormData();
+      formData.append("invoiceData", JSON.stringify(invoicePayload));
+
+      invoiceAttachments.forEach((file) => {
+        formData.append("attachments", file);
+      });
+
+      const res = await api.post("/sales-invoice", formData, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "multipart/form-data",
+        },
+      });
+
+      if (res.data?.success) {
+        toast.success(`Invoice ${res.data.data?.invoiceNumber || ""} created successfully!`);
+        setIsItemInvoiceModalOpen(false);
+        setInvoiceAttachments([]);
+      }
+    } catch (err) {
+      console.error("Sales invoice creation failed:", err);
+      toast.error(err.response?.data?.error || err.message || "Failed to create invoice");
+    } finally {
+      setGeneratingInvoice(false);
+    }
+  };
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-10">
       <div className="max-w-7xl mx-auto">
@@ -2035,7 +2445,7 @@ export default function BOQDetailsPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button
-              onClick={goToProgressBilling}
+              onClick={openFullBoqInvoiceModal}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-sm hover:bg-emerald-700 shadow-lg shadow-emerald-100 transition-all"
             >
               <FaFileInvoice size={12} /> Generate Invoice
@@ -2117,10 +2527,11 @@ export default function BOQDetailsPage() {
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        goToSectionInvoice(sectionName);
+                        // Open modal using first parent item in section
+                        openItemInvoiceModal(parentItemsInSection[0], sectionName);
                       }}
-                      className="flex items-center gap-1 px-3 py-1 rounded-lg bg-emerald-600 text-white text-[10px] font-bold hover:bg-emerald-700 transition-colors"
-                      title="Generate Invoice for this section"
+                      className="flex items-center gap-1 px-3 py-1 rounded-lg bg-emerald-600 text-white text-[10px] font-bold hover:bg-emerald-700 transition-colors shadow-sm cursor-pointer"
+                      title="Generate Invoice for this item"
                     >
                       <FaFileInvoice size={10} /> Invoice
                     </button>
@@ -3070,6 +3481,448 @@ export default function BOQDetailsPage() {
           </div>
         </div>
       )}
+      {/* ─── SALES INVOICE GENERATOR MODAL ───────────────────────────────── */}
+      {isItemInvoiceModalOpen && (() => {
+        const activeBillable = invoiceLines.filter((l) => l.selected && !l.isHeader);
+        const amtSupplyTotal = activeBillable.reduce(
+          (sum, l) => sum + (parseFloat(l.quantity) || 0) * (parseFloat(l.unitRateSupply) || 0),
+          0
+        );
+        const amtInstallTotal = activeBillable.reduce(
+          (sum, l) => sum + (parseFloat(l.quantity) || 0) * (parseFloat(l.unitRateInstallation) || 0),
+          0
+        );
+        const taxableSubtotal = amtSupplyTotal + amtInstallTotal;
+        const currentGst = (taxableSubtotal * (Number(invoiceGstRate) || 0)) / 100;
+        const grandTotal = taxableSubtotal + currentGst + (parseFloat(invoiceFreight) || 0) + (parseFloat(invoiceRounding) || 0);
+
+        return (
+          <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[94vh]">
+
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between shrink-0 bg-slate-50">
+                <div className="flex items-center gap-3">
+                  <span className="p-2.5 rounded-xl bg-indigo-100 text-indigo-700 font-bold text-xs">
+                    <FaFileInvoice size={15} />
+                  </span>
+                  <div>
+                    <h2 className="text-sm font-black text-gray-900">
+                      {invoiceMode === "full_boq" ? "Generate Full BOQ Invoice" : "Generate Item Sales Invoice"}
+                    </h2>
+                    <p className="text-[11px] text-gray-500 font-mono">
+                      BOQ Ref: {boq?.boqNumber} · Mode: {invoiceMode.toUpperCase()}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsItemInvoiceModalOpen(false)}
+                  className="w-8 h-8 rounded-full bg-gray-200/60 hover:bg-gray-200 flex items-center justify-center text-gray-500 transition-colors cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Modal Form */}
+              <form onSubmit={handleConfirmSalesInvoice} className="p-6 space-y-4 overflow-y-auto flex-1 text-xs">
+
+                {/* Point 4: Customer Details Card matching Sales Invoice View */}
+                {/* Customer Details Card with Auto-Fill */}
+                <div className="p-4 rounded-2xl bg-white border border-gray-200 shadow-2xs space-y-3">
+                  <div className="flex items-center gap-2 text-indigo-600 font-bold text-xs">
+                    <FaUserTie /> Customer Details
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    {/* Searchable / Selectable Customer Name */}
+                    <div>
+                      <Lbl text="Customer Name" req />
+                      <Select
+                        options={customerOptions}
+                        value={customerOptions.find((opt) => String(opt.value) === String(invoiceCustomerId)) || null}
+                        onChange={(opt) => handleCustomerSelect(opt ? opt.value : "")}
+                        placeholder="Select or search customer..."
+                        isClearable
+                        className="text-xs"
+                        styles={{
+                          control: (base) => ({
+                            ...base,
+                            borderRadius: "0.75rem",
+                            borderColor: "#e5e7eb",
+                            fontSize: "0.75rem",
+                            minHeight: "38px",
+                          }),
+                        }}
+                      />
+                    </div>
+
+                    {/* Auto-filled Customer Code */}
+                    <div>
+                      <Lbl text="Customer Code" />
+                      <input
+                        type="text"
+                        readOnly
+                        value={invoiceCustomerCode}
+                        placeholder="Auto-filled"
+                        className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-gray-50 text-xs font-mono font-bold text-indigo-900 outline-none"
+                      />
+                    </div>
+
+                    {/* Auto-filled Contact Person */}
+                    <div>
+                      <Lbl text="Contact Person" />
+                      <input
+                        type="text"
+                        readOnly
+                        value={invoiceContactPerson}
+                        placeholder="Auto-filled"
+                        className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-gray-50 text-xs text-gray-700 outline-none"
+                      />
+                    </div>
+
+                    {/* Reference Number */}
+                    <div>
+                      <Lbl text="Reference No." />
+                      <input
+                        type="text"
+                        value={invoiceRefNumber}
+                        onChange={(e) => setInvoiceRefNumber(e.target.value)}
+                        placeholder="PO or Ref Number..."
+                        className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white text-xs font-medium focus:border-indigo-500 outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Invoice Dates & Point 2: Warehouse Loading Card */}
+                <div className="p-4 rounded-2xl bg-white border border-gray-200 shadow-2xs">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <div>
+                      <Lbl text="Invoice Date" req />
+                      <input
+                        type="date"
+                        value={invoiceDate}
+                        onChange={(e) => setInvoiceDate(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white text-xs font-medium focus:border-indigo-500 outline-none"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Lbl text="Due Date" />
+                      <input
+                        type="date"
+                        value={invoiceDueDate}
+                        onChange={(e) => setInvoiceDueDate(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white text-xs font-medium focus:border-indigo-500 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <Lbl text="Order Date" />
+                      <input
+                        type="date"
+                        value={invoiceOrderDate}
+                        onChange={(e) => setInvoiceOrderDate(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white text-xs font-medium focus:border-indigo-500 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <Lbl text="Warehouse Assignment" req />
+                      <select
+                        value={selectedWarehouseId}
+                        onChange={(e) => setSelectedWarehouseId(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white text-xs font-semibold text-gray-800 focus:border-indigo-500 outline-none"
+                      >
+                        {warehouses.length > 0 ? (
+                          warehouses.map((w) => (
+                            <option key={w._id} value={w._id}>
+                              {w.warehouseName || w.name}
+                            </option>
+                          ))
+                        ) : (
+                          <option value="">Main Logistics Depot</option>
+                        )}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Point 3 & 5: Line Items Table (Single Qty, Multi-Rate, Full BOQ & Material Nesting) */}
+                <div className="border border-gray-200 rounded-2xl overflow-hidden bg-white shadow-2xs">
+                  <div className="px-4 py-2.5 bg-slate-50 border-b border-gray-200 flex items-center justify-between">
+                    <span className="font-extrabold text-gray-800 text-xs flex items-center gap-1.5">
+                      <FaBoxes className="text-indigo-600" /> Billable Line Items ({invoiceLines.length})
+                    </span>
+                    <span className="text-[11px] text-gray-500">
+                      Single Bill Qty determines Supply & Installation amounts
+                    </span>
+                  </div>
+
+                  <div className="max-h-72 overflow-y-auto">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead className="bg-[#5c54e5] text-white text-[10px] uppercase font-bold sticky top-0 z-10">
+                        <tr>
+                          <th className="px-2.5 py-2 w-8 text-center">Inc.</th>
+                          <th className="px-2.5 py-2 w-16 text-center">Sr.</th>
+                          <th className="px-3 py-2 min-w-[200px]">Description</th>
+                          <th className="px-2 py-2 text-center w-12">Unit</th>
+                          <th className="px-2.5 py-2 text-center w-20 bg-indigo-700">Qty</th>
+                          <th className="px-2 py-2 text-right w-20">Rate (Supply)</th>
+                          <th className="px-2 py-2 text-right w-20">Rate (Install)</th>
+                          <th className="px-2.5 py-2 text-right w-24">Amt (Supply)</th>
+                          <th className="px-2.5 py-2 text-right w-24">Amt (Install)</th>
+                          <th className="px-3 py-2 text-right w-24">Total Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 bg-white">
+                        {invoiceLines.map((line) => {
+                          // Header / Scope row (1002, 1101, etc.)
+                          if (line.isHeader) {
+                            return (
+                              <tr key={line._id} className="bg-indigo-50/70 border-y border-indigo-200">
+                                <td className="px-2.5 py-2 text-center">
+                                  <input
+                                    type="checkbox"
+                                    checked={line.selected}
+                                    onChange={() => toggleLine(line._id)}
+                                    className="rounded border-gray-300 text-indigo-600 focus:ring-0 cursor-pointer"
+                                  />
+                                </td>
+                                <td className="px-2.5 py-2 text-center font-mono font-bold text-indigo-950 text-[11px]">
+                                  {line.srNo}
+                                </td>
+                                <td colSpan={7} className="px-3 py-2 text-xs font-bold text-indigo-950 leading-snug">
+                                  {line.description}
+                                </td>
+                                <td className="px-3 py-2 text-right text-indigo-700 font-mono text-[10px] uppercase font-bold">
+                                  Scope Header
+                                </td>
+                              </tr>
+                            );
+                          }
+
+                          // Point 3: Single Qty driving both Supply and Installation amounts
+                          const lineQty = parseFloat(line.quantity) || 0;
+                          const supplyAmt = lineQty * (parseFloat(line.unitRateSupply) || 0);
+                          const installAmt = lineQty * (parseFloat(line.unitRateInstallation) || 0);
+                          const lineTotal = supplyAmt + installAmt;
+
+                          return (
+                            <tr key={line._id} className={line.selected ? "hover:bg-slate-50" : "opacity-40 bg-gray-50"}>
+                              <td className="px-2.5 py-2 text-center align-top">
+                                <input
+                                  type="checkbox"
+                                  checked={line.selected}
+                                  onChange={() => toggleLine(line._id)}
+                                  className="rounded border-gray-300 text-indigo-600 focus:ring-0 cursor-pointer"
+                                />
+                              </td>
+                              <td className="px-2.5 py-2 text-center font-mono font-bold text-[11px] text-gray-600 align-top">
+                                {line.srNo}
+                              </td>
+                              <td className="px-3 py-2 text-gray-800 text-[11px] leading-relaxed whitespace-pre-line align-top">
+                                <div>{line.description}</div>
+                                {line.materials && line.materials.length > 0 && (
+                                  <div className="mt-1 text-[10px] text-indigo-600 font-semibold flex items-center gap-1">
+                                    <FaBoxes size={9} /> {line.materials.length} Raw Material(s) Attached
+                                  </div>
+                                )}
+                              </td>
+                              <td className="px-2 py-2 text-center text-gray-500 font-mono text-[11px] align-top">
+                                {line.unit}
+                              </td>
+                              <td className="px-2 py-2 align-top">
+                                {/* Single Qty Input */}
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="any"
+                                  disabled={!line.selected}
+                                  value={line.quantity}
+                                  onChange={(e) => handleSingleQtyChange(line._id, e.target.value)}
+                                  className="w-full px-1.5 py-1 border border-indigo-200 rounded text-center font-mono text-xs font-bold text-indigo-900 bg-indigo-50/50 outline-none"
+                                />
+                              </td>
+                              <td className="px-2 py-2 text-right font-mono text-gray-600 text-[11px] align-top">
+                                {line.unitRateSupply ? formatCurrency(line.unitRateSupply) : "—"}
+                              </td>
+                              <td className="px-2 py-2 text-right font-mono text-gray-600 text-[11px] align-top">
+                                {line.unitRateInstallation ? formatCurrency(line.unitRateInstallation) : "—"}
+                              </td>
+                              <td className="px-2.5 py-2 text-right font-mono text-gray-800 text-[11px] align-top">
+                                {formatCurrency(supplyAmt)}
+                              </td>
+                              <td className="px-2.5 py-2 text-right font-mono text-gray-800 text-[11px] align-top">
+                                {formatCurrency(installAmt)}
+                              </td>
+                              <td className="px-3 py-2 text-right font-mono font-bold text-gray-900 text-[11px] align-top">
+                                {formatCurrency(lineTotal)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Point 1: Financial Summary with Editable GST */}
+                <div className="p-4 rounded-2xl bg-white border border-gray-200 shadow-2xs space-y-3">
+                  <div className="font-extrabold text-xs text-gray-800 uppercase tracking-wider">
+                    Financial Summary
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                    <div>
+                      <Lbl text="Taxable Amount" />
+                      <input
+                        type="text"
+                        readOnly
+                        value={formatCurrency(taxableSubtotal)}
+                        className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-gray-50 font-mono font-bold text-xs"
+                      />
+                    </div>
+
+                    {/* Point 1: Editable GST Rate Input */}
+                    <div>
+                      <Lbl text="GST Rate (%)" req />
+                      <div className="flex items-center">
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.5"
+                          value={invoiceGstRate}
+                          onChange={(e) => setInvoiceGstRate(parseFloat(e.target.value) || 0)}
+                          className="w-full px-3 py-2 rounded-l-xl border border-gray-200 font-mono font-bold text-xs focus:border-indigo-500 outline-none"
+                        />
+                        <span className="px-2.5 py-2 bg-gray-100 border border-l-0 border-gray-200 rounded-r-xl text-gray-500 font-bold text-xs">
+                          %
+                        </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <Lbl text={`GST Total (${invoiceGstRate}%)`} />
+                      <input
+                        type="text"
+                        readOnly
+                        value={formatCurrency(currentGst)}
+                        className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-gray-50 font-mono font-bold text-xs text-indigo-900"
+                      />
+                    </div>
+
+                    <div>
+                      <Lbl text="Freight" />
+                      <input
+                        type="number"
+                        min="0"
+                        value={invoiceFreight}
+                        onChange={(e) => setInvoiceFreight(parseFloat(e.target.value) || 0)}
+                        className="w-full px-3 py-2 rounded-xl border border-gray-200 font-mono text-xs focus:border-indigo-500 outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <Lbl text="Rounding" />
+                      <input
+                        type="number"
+                        step="any"
+                        value={invoiceRounding}
+                        onChange={(e) => setInvoiceRounding(parseFloat(e.target.value) || 0)}
+                        className="w-full px-3 py-2 rounded-xl border border-gray-200 font-mono text-xs focus:border-indigo-500 outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Grand Total Bar */}
+                  <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-xl flex items-center justify-between">
+                    <span className="font-extrabold text-indigo-900 text-xs uppercase tracking-wider">
+                      Invoice Grand Total:
+                    </span>
+                    <span className="text-lg font-black font-mono text-indigo-600">
+                      {formatCurrency(grandTotal)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Payment Details & Attachments */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-4 rounded-2xl bg-slate-50 border border-slate-200">
+                  <div>
+                    <Lbl text="Payment Mode" />
+                    <select
+                      value={paymentMethod}
+                      onChange={(e) => setPaymentMethod(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white text-xs font-semibold outline-none"
+                    >
+                      <option value="cash">Cash</option>
+                      <option value="bank">Bank Transfer</option>
+                      <option value="upi">UPI</option>
+                      <option value="card">Card</option>
+                      <option value="netbanking">Net Banking</option>
+                    </select>
+                  </div>
+                  <div>
+                    <Lbl text="Down Payment / Received" />
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={paidAmountInput}
+                      onChange={(e) => setPaidAmountInput(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white font-mono font-bold text-xs outline-none"
+                    />
+                  </div>
+                  <div>
+                    <Lbl text="Attachments (PDF / Files)" />
+                    <input
+                      type="file"
+                      multiple
+                      onChange={(e) => setInvoiceAttachments(Array.from(e.target.files || []))}
+                      className="w-full text-[11px] text-gray-500 file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-bold file:bg-indigo-100 file:text-indigo-700 hover:file:bg-indigo-200 cursor-pointer"
+                    />
+                  </div>
+                </div>
+
+                {/* Remarks */}
+                <div>
+                  <Lbl text="Remarks / Terms & Notes" />
+                  <textarea
+                    rows={2}
+                    value={invoiceRemarks}
+                    onChange={(e) => setInvoiceRemarks(e.target.value)}
+                    placeholder="Enter payment terms, milestone references, or scope specifications..."
+                    className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white text-xs outline-none focus:border-indigo-500"
+                  />
+                </div>
+
+                {/* Actions */}
+                <div className="flex justify-end items-center gap-3 pt-3 border-t border-gray-100">
+                  <button
+                    type="button"
+                    onClick={() => setIsItemInvoiceModalOpen(false)}
+                    className="px-4 py-2 text-xs font-bold text-gray-400 hover:text-gray-600 uppercase tracking-wider cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={generatingInvoice || taxableSubtotal <= 0}
+                    className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-[#5c54e5] text-white font-bold text-xs hover:bg-indigo-700 shadow-md shadow-indigo-100 transition-all disabled:opacity-50 cursor-pointer"
+                  >
+                    {generatingInvoice ? (
+                      <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <FaCheck size={11} />
+                    )}
+                    {generatingInvoice ? "Creating Official Invoice..." : "Create Sales Invoice"}
+                  </button>
+                </div>
+              </form>
+
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

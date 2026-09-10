@@ -732,6 +732,15 @@ function normalize(str) {
   return (str || "").toString().trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+// ─── Helper: Identify legitimate billable items vs empty scope headers ───
+function isBillableLine(desc) {
+  const isRateOnly = Boolean(desc.isRateOnly);
+  const qty = parseFloat(desc.quantity ?? desc.qty) || 0;
+  const supplyRate = parseFloat(desc.unitRateSupply) || 0;
+  const installRate = parseFloat(desc.unitRateInstallation) || 0;
+  return isRateOnly || (qty > 0 && (supplyRate > 0 || installRate > 0));
+}
+
 // ─── Auto-Increment Item Code Generator ──────────────────────────────────
 async function getNextItemCode(companyId) {
   const lastItem = await Item.findOne({
@@ -797,10 +806,11 @@ function mapAndDedupeItems(rawItems) {
         );
 
         if (!isDuplicate) {
-          const qty = parseFloat(desc.quantity ?? desc.qty) || 0;
-          const supplyRate = parseFloat(desc.unitRateSupply) || 0;
-          const installRate = parseFloat(desc.unitRateInstallation) || 0;
-          const isRateOnly = !!desc.isRateOnly;
+          const isHeader = !isBillableLine(desc);
+          const qty = isHeader ? 0 : parseFloat(desc.quantity ?? desc.qty) || 0;
+          const supplyRate = isHeader ? 0 : parseFloat(desc.unitRateSupply) || 0;
+          const installRate = isHeader ? 0 : parseFloat(desc.unitRateInstallation) || 0;
+          const isRateOnly = isHeader ? false : !!desc.isRateOnly;
           const amountSupply = isRateOnly ? supplyRate : qty * supplyRate;
           const amountInstallation = isRateOnly ? installRate : qty * installRate;
           const totalAmount = amountSupply + amountInstallation;
@@ -809,7 +819,7 @@ function mapAndDedupeItems(rawItems) {
             itemId: desc.itemId && mongoose.Types.ObjectId.isValid(desc.itemId) ? desc.itemId : null,
             srNo,
             description: descText,
-            unit: (desc.unit || "nos").trim(),
+            unit: isHeader ? "—" : (desc.unit || "nos").trim(),
             quantity: isRateOnly ? 0 : qty,
             unitRateSupply: supplyRate,
             unitRateInstallation: installRate,
@@ -818,6 +828,7 @@ function mapAndDedupeItems(rawItems) {
             totalAmount,
             amount: totalAmount,
             isRateOnly,
+            isHeader,
             _id: desc._id && mongoose.Types.ObjectId.isValid(desc._id) ? desc._id : undefined,
           });
         }
@@ -835,10 +846,11 @@ function mapAndDedupeItems(rawItems) {
       );
 
       if (!isDuplicate) {
-        const qty = parseFloat(raw.quantity ?? raw.qty) || 0;
-        const supplyRate = parseFloat(raw.unitRateSupply) || 0;
-        const installRate = parseFloat(raw.unitRateInstallation) || 0;
-        const isRateOnly = !!raw.isRateOnly;
+        const isHeader = !isBillableLine(raw);
+        const qty = isHeader ? 0 : parseFloat(raw.quantity ?? raw.qty) || 0;
+        const supplyRate = isHeader ? 0 : parseFloat(raw.unitRateSupply) || 0;
+        const installRate = isHeader ? 0 : parseFloat(raw.unitRateInstallation) || 0;
+        const isRateOnly = isHeader ? false : !!raw.isRateOnly;
         const amountSupply = isRateOnly ? supplyRate : qty * supplyRate;
         const amountInstallation = isRateOnly ? installRate : qty * installRate;
         const totalAmount = amountSupply + amountInstallation;
@@ -847,7 +859,7 @@ function mapAndDedupeItems(rawItems) {
           itemId: raw.itemId && mongoose.Types.ObjectId.isValid(raw.itemId) ? raw.itemId : null,
           srNo,
           description: descText,
-          unit: (raw.unit || "nos").trim(),
+          unit: isHeader ? "—" : (raw.unit || "nos").trim(),
           quantity: isRateOnly ? 0 : qty,
           unitRateSupply: supplyRate,
           unitRateInstallation: installRate,
@@ -856,6 +868,7 @@ function mapAndDedupeItems(rawItems) {
           totalAmount,
           amount: totalAmount,
           isRateOnly,
+          isHeader,
         });
       }
     }
@@ -883,7 +896,6 @@ async function findOrCreateRawMaterialItem(companyId, userId, descLine, parentCa
   });
 
   if (rawMat) {
-    // Update existing item's rate and amount breakdown
     rawMat.quantity = qty;
     rawMat.unitRateSupply = supplyRate;
     rawMat.unitRateInstallation = installRate;
@@ -898,7 +910,6 @@ async function findOrCreateRawMaterialItem(companyId, userId, descLine, parentCa
     return rawMat;
   }
 
-  // Create new item with rate and amount breakdown
   const nextCode = await getNextItemCode(companyId);
   rawMat = new Item({
     companyId,
@@ -926,14 +937,19 @@ async function findOrCreateRawMaterialItem(companyId, userId, descLine, parentCa
   await rawMat.save();
   return rawMat;
 }
+
 // ─── Find or Create Parent Item as a "Product" (Finished Good) & Link BOM ──
 async function syncParentAndLinkBOM(companyId, userId, parent) {
   const rawParentName = (parent.itemName || "").trim();
-
-  // 1. Process all description lines into Raw Material items first
   const rawMaterialLinks = [];
 
+  // 1. Process description lines into Raw Material items ONLY if billable
   for (const descLine of parent.descriptions) {
+    if (descLine.isHeader || !isBillableLine(descLine)) {
+      descLine.itemId = null; // Headers do not have Master IDs
+      continue; // 👈 Skip Raw Material creation and BOM linking
+    }
+
     let rawMatDoc;
     if (descLine.itemId && mongoose.Types.ObjectId.isValid(descLine.itemId)) {
       rawMatDoc = await Item.findOne({ _id: descLine.itemId, companyId });
@@ -943,10 +959,8 @@ async function syncParentAndLinkBOM(companyId, userId, parent) {
       rawMatDoc = await findOrCreateRawMaterialItem(companyId, userId, descLine, parent.section);
     }
 
-    // Link child description directly to the Raw Material Item ID
     descLine.itemId = rawMatDoc._id;
 
-    // Add to Parent's BOM array
     rawMaterialLinks.push({
       rawMaterialId: rawMatDoc._id,
       rawMaterialName: rawMatDoc.itemName,
@@ -972,14 +986,12 @@ async function syncParentAndLinkBOM(companyId, userId, parent) {
   }
 
   if (productDoc) {
-    // Update Finished Good's BOM references
     productDoc.rawMaterials = rawMaterialLinks;
     if (parent.sectionSpecification) {
       productDoc.description = parent.sectionSpecification;
     }
     await productDoc.save();
   } else {
-    // Create new Product item in Master Catalog
     const nextProductCode = await getNextItemCode(companyId);
     productDoc = new Item({
       companyId,
