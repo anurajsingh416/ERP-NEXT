@@ -1302,6 +1302,7 @@
 //     </div>
 //   );
 // }
+
 "use client";
 
 import { Fragment, useEffect, useState } from "react";
@@ -2061,6 +2062,7 @@ export default function BOQDetailsPage() {
   };
 
   // ─── Trigger 2: Full BOQ Invoice ────────────────────────────────────
+  // ─── Trigger: Multi-Parent / Full BOQ Invoice ───────────────────────
   const openFullBoqInvoiceModal = () => {
     if (!boq || !Array.isArray(boq.items)) return;
     setInvoiceMode("full_boq");
@@ -2081,6 +2083,7 @@ export default function BOQDetailsPage() {
           _id: desc._id,
           itemId: desc.itemId || null,
           parentItemId: parent._id,
+          parentSerialNo: parent.itemSerialNo,
           parentName: parent.itemName,
           sectionName: parent.section || "Other Work",
           srNo: desc.srNo || "",
@@ -2090,7 +2093,7 @@ export default function BOQDetailsPage() {
           unitRateSupply: Number(desc.unitRateSupply) || 0,
           unitRateInstallation: Number(desc.unitRateInstallation) || 0,
           isHeader,
-          selected: !isHeader,
+          selected: !isHeader, // 👈 Start unselected so you can choose which parents to include
           materials: desc.materials || [],
         });
       });
@@ -2098,8 +2101,8 @@ export default function BOQDetailsPage() {
 
     setSelectedInvoiceItem({
       parentItem: null,
-      sectionName: "All Sections",
-      itemName: `Full BOQ (${boq.boqNumber})`,
+      sectionName: "Selected Parent Items",
+      itemName: `BOQ Items (${boq.boqNumber})`,
       itemSerialNo: boq.boqNumber,
       scopeExplanation: boq.remarks || "",
     });
@@ -2163,6 +2166,22 @@ export default function BOQDetailsPage() {
       }
 
       return prev.map((l) => (l._id === lineId ? { ...l, selected: newSelected } : l));
+    });
+  };
+
+  // ─── Toggle All Lines Belonging to a Specific Parent Item ────────────
+  const toggleParentItem = (parentItemId) => {
+    setInvoiceLines((prev) => {
+      const parentLines = prev.filter((l) => l.parentItemId === parentItemId && !l.isHeader);
+      const allSelected = parentLines.every((l) => l.selected);
+      const nextState = !allSelected;
+
+      return prev.map((l) => {
+        if (l.parentItemId === parentItemId) {
+          return { ...l, selected: nextState };
+        }
+        return l;
+      });
     });
   };
 
@@ -2307,7 +2326,7 @@ export default function BOQDetailsPage() {
         formData.append("invoiceData", JSON.stringify(salesPayload));
         invoiceAttachments.forEach((file) => formData.append("attachments", file));
 
-        const res = await api.post("/sales/invoices", formData, {
+        const res = await api.post("/sales-invoice", formData, {
           headers: { Authorization: `Bearer ${token}`, "Content-Type": "multipart/form-data" },
         });
 
@@ -3611,21 +3630,39 @@ export default function BOQDetailsPage() {
                 </div>
 
                 {/* Line Items Table */}
+                {/* Line Items Table Grouped by Parent Item */}
                 <div className="border border-gray-200 rounded-2xl overflow-hidden bg-white shadow-2xs">
                   <div className="px-4 py-2.5 bg-slate-50 border-b border-gray-200 flex items-center justify-between">
                     <span className="font-extrabold text-gray-800 text-xs flex items-center gap-1.5">
-                      <FaBoxes className="text-indigo-600" /> Billable Line Items ({invoiceLines.length})
+                      <FaBoxes className="text-indigo-600" /> Billable Line Items ({invoiceLines.filter(l => l.selected && !l.isHeader).length} selected)
                     </span>
                     <span className="text-[11px] text-gray-500">
-                      Single Bill Qty determines Supply & Installation amounts
+                      Check a Parent Item header to select/deselect all its billable items
                     </span>
                   </div>
 
-                  <div className="max-h-72 overflow-y-auto">
+                  <div className="max-h-80 overflow-y-auto">
                     <table className="w-full text-left text-xs border-collapse">
-                      <thead className="bg-[#5c54e5] text-white text-[10px] uppercase font-bold sticky top-0 z-10">
+                      <thead className="bg-[#5c54e5] text-white text-[10px] uppercase font-bold sticky top-0 z-20">
+
                         <tr>
-                          <th className="px-2.5 py-2 w-8 text-center">Inc.</th>
+
+                          <th className="px-2.5 py-2 w-10 text-center">Inc.
+                            <th className="px-2.5 py-2 w-10 text-center">
+                              <input
+                                type="checkbox"
+                                checked={invoiceLines.filter((l) => !l.isHeader).every((l) => l.selected)}
+                                onChange={(e) => {
+                                  const isChecked = e.target.checked;
+                                  setInvoiceLines((prev) =>
+                                    prev.map((l) => (l.isHeader ? l : { ...l, selected: isChecked }))
+                                  );
+                                }}
+                                className="rounded border-gray-400 text-indigo-600 focus:ring-0 cursor-pointer w-3.5 h-3.5"
+                                title="Select / Deselect All"
+                              />
+                            </th>
+                          </th>
                           <th className="px-2.5 py-2 w-16 text-center">Sr.</th>
                           <th className="px-3 py-2 min-w-[200px]">Description</th>
                           <th className="px-2 py-2 text-center w-12">Unit</th>
@@ -3638,89 +3675,137 @@ export default function BOQDetailsPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100 bg-white">
-                        {invoiceLines.map((line) => {
-                          if (line.isHeader) {
+                        {(() => {
+                          // Group lines by parentItemId
+                          const parentGroupIds = [...new Set(invoiceLines.map((l) => l.parentItemId))];
+
+                          return parentGroupIds.map((pId) => {
+                            const linesForParent = invoiceLines.filter((l) => l.parentItemId === pId);
+                            const parentInfo = linesForParent[0];
+                            const billableChildren = linesForParent.filter((l) => !l.isHeader);
+                            const isParentFullySelected = billableChildren.length > 0 && billableChildren.every((l) => l.selected);
+                            const isParentPartiallySelected = billableChildren.some((l) => l.selected) && !isParentFullySelected;
+
                             return (
-                              <tr key={line._id} className="bg-indigo-50/70 border-y border-indigo-200">
-                                <td className="px-2.5 py-2 text-center">
-                                  <input
-                                    type="checkbox"
-                                    checked={line.selected}
-                                    onChange={() => toggleLine(line._id)}
-                                    className="rounded border-gray-300 text-indigo-600 focus:ring-0 cursor-pointer"
-                                  />
-                                </td>
-                                <td className="px-2.5 py-2 text-center font-mono font-bold text-indigo-950 text-[11px]">
-                                  {line.srNo}
-                                </td>
-                                <td colSpan={7} className="px-3 py-2 text-xs font-bold text-indigo-950 leading-snug">
-                                  {line.description}
-                                </td>
-                                <td className="px-3 py-2 text-right text-indigo-700 font-mono text-[10px] uppercase font-bold">
-                                  Scope Header
-                                </td>
-                              </tr>
+                              <Fragment key={pId || "root-group"}>
+                                {/* ── PARENT ITEM MASTER HEADER ROW ── */}
+                                <tr className="bg-slate-100/90 border-t-2 border-slate-300 font-bold sticky z-10">
+                                  <td className="px-2.5 py-2 text-center">
+                                    <input
+                                      type="checkbox"
+                                      checked={isParentFullySelected}
+                                      ref={(el) => {
+                                        if (el) el.indeterminate = isParentPartiallySelected;
+                                      }}
+                                      onChange={() => toggleParentItem(pId)}
+                                      className="rounded border-gray-400 text-indigo-600 focus:ring-0 cursor-pointer w-3.5 h-3.5"
+                                    />
+                                  </td>
+                                  <td className="px-2.5 py-2 text-center font-mono text-indigo-950 font-black">
+                                    {parentInfo?.parentSerialNo || "—"}
+                                  </td>
+                                  <td colSpan={7} className="px-3 py-2 text-xs font-black text-gray-900">
+                                    <span className="text-indigo-600 mr-1.5 uppercase tracking-wide text-[10px] bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded">
+                                      Parent Item
+                                    </span>
+                                    {parentInfo?.parentName}
+                                  </td>
+                                  <td className="px-3 py-2 text-right text-indigo-700 font-mono text-[10px] uppercase font-bold">
+                                    {billableChildren.filter(c => c.selected).length}/{billableChildren.length} Selected
+                                  </td>
+                                </tr>
+
+                                {/* ── CHILD LINES UNDER THIS PARENT ── */}
+                                {linesForParent.map((line) => {
+                                  if (line.isHeader) {
+                                    return (
+                                      <tr key={line._id} className="bg-indigo-50/50 border-y border-indigo-100">
+                                        <td className="px-2.5 py-1.5 text-center">
+                                          <input
+                                            type="checkbox"
+                                            checked={line.selected}
+                                            onChange={() => toggleLine(line._id)}
+                                            className="rounded border-gray-300 text-indigo-600 focus:ring-0 cursor-pointer"
+                                          />
+                                        </td>
+                                        <td className="px-2.5 py-1.5 text-center font-mono font-bold text-indigo-950 text-[11px]">
+                                          {line.srNo}
+                                        </td>
+                                        <td colSpan={7} className="px-3 py-1.5 text-xs font-semibold text-indigo-950">
+                                          {line.description}
+                                        </td>
+                                        <td className="px-3 py-1.5 text-right text-indigo-600 font-mono text-[10px] uppercase font-bold">
+                                          Scope Header
+                                        </td>
+                                      </tr>
+                                    );
+                                  }
+
+                                  const lineQty = parseFloat(line.quantity) || 0;
+                                  const supplyAmt = lineQty * (parseFloat(line.unitRateSupply) || 0);
+                                  const installAmt = lineQty * (parseFloat(line.unitRateInstallation) || 0);
+                                  const lineTotal = supplyAmt + installAmt;
+
+                                  return (
+                                    <tr
+                                      key={line._id}
+                                      className={line.selected ? "hover:bg-slate-50" : "opacity-40 bg-gray-50/60"}
+                                    >
+                                      <td className="px-2.5 py-2 text-center align-top">
+                                        <input
+                                          type="checkbox"
+                                          checked={line.selected}
+                                          onChange={() => toggleLine(line._id)}
+                                          className="rounded border-gray-300 text-indigo-600 focus:ring-0 cursor-pointer"
+                                        />
+                                      </td>
+                                      <td className="px-2.5 py-2 text-center font-mono font-bold text-[11px] text-gray-600 align-top">
+                                        {line.srNo}
+                                      </td>
+                                      <td className="px-3 py-2 text-gray-800 text-[11px] leading-relaxed whitespace-pre-line align-top">
+                                        <div>{line.description}</div>
+                                        {line.materials && line.materials.length > 0 && (
+                                          <div className="mt-1 text-[10px] text-indigo-600 font-semibold flex items-center gap-1">
+                                            <FaBoxes size={9} /> {line.materials.length} Raw Material(s) Attached
+                                          </div>
+                                        )}
+                                      </td>
+                                      <td className="px-2 py-2 text-center text-gray-500 font-mono text-[11px] align-top">
+                                        {line.unit}
+                                      </td>
+                                      <td className="px-2 py-2 align-top">
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          step="any"
+                                          disabled={!line.selected}
+                                          value={line.quantity}
+                                          onChange={(e) => handleSingleQtyChange(line._id, e.target.value)}
+                                          className="w-full px-1.5 py-1 border border-indigo-200 rounded text-center font-mono text-xs font-bold text-indigo-900 bg-indigo-50/50 outline-none disabled:bg-gray-100"
+                                        />
+                                      </td>
+                                      <td className="px-2 py-2 text-right font-mono text-gray-600 text-[11px] align-top">
+                                        {line.unitRateSupply ? formatCurrency(line.unitRateSupply) : "—"}
+                                      </td>
+                                      <td className="px-2 py-2 text-right font-mono text-gray-600 text-[11px] align-top">
+                                        {line.unitRateInstallation ? formatCurrency(line.unitRateInstallation) : "—"}
+                                      </td>
+                                      <td className="px-2.5 py-2 text-right font-mono text-gray-800 text-[11px] align-top">
+                                        {formatCurrency(supplyAmt)}
+                                      </td>
+                                      <td className="px-2.5 py-2 text-right font-mono text-gray-800 text-[11px] align-top">
+                                        {formatCurrency(installAmt)}
+                                      </td>
+                                      <td className="px-3 py-2 text-right font-mono font-bold text-gray-900 text-[11px] align-top">
+                                        {formatCurrency(lineTotal)}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </Fragment>
                             );
-                          }
-
-                          const lineQty = parseFloat(line.quantity) || 0;
-                          const supplyAmt = lineQty * (parseFloat(line.unitRateSupply) || 0);
-                          const installAmt = lineQty * (parseFloat(line.unitRateInstallation) || 0);
-                          const lineTotal = supplyAmt + installAmt;
-
-                          return (
-                            <tr key={line._id} className={line.selected ? "hover:bg-slate-50" : "opacity-40 bg-gray-50"}>
-                              <td className="px-2.5 py-2 text-center align-top">
-                                <input
-                                  type="checkbox"
-                                  checked={line.selected}
-                                  onChange={() => toggleLine(line._id)}
-                                  className="rounded border-gray-300 text-indigo-600 focus:ring-0 cursor-pointer"
-                                />
-                              </td>
-                              <td className="px-2.5 py-2 text-center font-mono font-bold text-[11px] text-gray-600 align-top">
-                                {line.srNo}
-                              </td>
-                              <td className="px-3 py-2 text-gray-800 text-[11px] leading-relaxed whitespace-pre-line align-top">
-                                <div>{line.description}</div>
-                                {line.materials && line.materials.length > 0 && (
-                                  <div className="mt-1 text-[10px] text-indigo-600 font-semibold flex items-center gap-1">
-                                    <FaBoxes size={9} /> {line.materials.length} Raw Material(s) Attached
-                                  </div>
-                                )}
-                              </td>
-                              <td className="px-2 py-2 text-center text-gray-500 font-mono text-[11px] align-top">
-                                {line.unit}
-                              </td>
-                              <td className="px-2 py-2 align-top">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="any"
-                                  disabled={!line.selected}
-                                  value={line.quantity}
-                                  onChange={(e) => handleSingleQtyChange(line._id, e.target.value)}
-                                  className="w-full px-1.5 py-1 border border-indigo-200 rounded text-center font-mono text-xs font-bold text-indigo-900 bg-indigo-50/50 outline-none"
-                                />
-                              </td>
-                              <td className="px-2 py-2 text-right font-mono text-gray-600 text-[11px] align-top">
-                                {line.unitRateSupply ? formatCurrency(line.unitRateSupply) : "—"}
-                              </td>
-                              <td className="px-2 py-2 text-right font-mono text-gray-600 text-[11px] align-top">
-                                {line.unitRateInstallation ? formatCurrency(line.unitRateInstallation) : "—"}
-                              </td>
-                              <td className="px-2.5 py-2 text-right font-mono text-gray-800 text-[11px] align-top">
-                                {formatCurrency(supplyAmt)}
-                              </td>
-                              <td className="px-2.5 py-2 text-right font-mono text-gray-800 text-[11px] align-top">
-                                {formatCurrency(installAmt)}
-                              </td>
-                              <td className="px-3 py-2 text-right font-mono font-bold text-gray-900 text-[11px] align-top">
-                                {formatCurrency(lineTotal)}
-                              </td>
-                            </tr>
-                          );
-                        })}
+                          });
+                        })()}
                       </tbody>
                     </table>
                   </div>

@@ -1923,7 +1923,6 @@ const ItemHeaderRow = memo(function ItemHeaderRow({
         </td>
       </tr>
 
-      {/* Technical Scope / Specification Box */}
       {showSpec && (
         <tr className="bg-amber-50/50 border-t border-amber-200/40">
           <td className="px-2 py-1.5 text-center text-[10px] font-bold text-amber-600">
@@ -2380,14 +2379,14 @@ const SectionContainer = memo(function SectionContainer({
           <button
             type="button"
             onClick={() => onAddSubSection(section.id)}
-            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition-colors"
+            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition-colors cursor-pointer"
           >
             <FaPlus size={10} /> Add Sub-Section
           </button>
           <button
             type="button"
             onClick={() => onRemoveSection(section.id)}
-            className="text-gray-400 hover:text-red-500 text-xs flex items-center gap-1"
+            className="text-gray-400 hover:text-red-500 text-xs flex items-center gap-1 cursor-pointer"
           >
             <FaTrash size={12} /> Remove Section
           </button>
@@ -2717,74 +2716,6 @@ export default function ConstructionBOQPage() {
       toast.error(err.response?.data?.message || "Failed to save BOQ.");
     }
   };
-  // dummy start
-  const handleImport1 = async () => {
-    if (!selectedProjectImport || !importFile) {
-      toast.error("Please select a project and choose an Excel file.");
-      return;
-    }
-
-    setImporting(true);
-    setAnalysisProgress(10);
-    setProgressMessage("Parsing Excel rows (Dummy Mode)...");
-
-    // Simulate smooth progress ticks up to 100%
-    const progressInterval = setInterval(() => {
-      setAnalysisProgress((prev) => {
-        if (prev >= 95) return prev;
-        const next = prev + 15;
-        if (next > 40 && next < 80) setProgressMessage("Simulating AI item matching...");
-        if (next >= 80) setProgressMessage("Finalizing preview data...");
-        return next > 95 ? 95 : next;
-      });
-    }, 350);
-
-    // Simulate network / processing delay (2 seconds)
-    setTimeout(() => {
-      clearInterval(progressInterval);
-      setAnalysisProgress(100);
-      setProgressMessage("Analysis complete!");
-
-      setTimeout(() => {
-        // Mock analysis result object to let you test the UI review table/preview
-        const mockAnalysisData = {
-          success: true,
-          data: {
-            boqNumber: "BOQ-DUMMY-01",
-            items: [
-              {
-                _id: "dummy_item_1",
-                itemSerialNo: "1000",
-                itemName: "11KV SWITCHYARD AND ACCESSORIES",
-                section: "Electrical Works",
-                subSection: "Main",
-                itemTotalAmount: 220024,
-                descriptions: [
-                  {
-                    _id: "dummy_desc_1",
-                    srNo: "1001",
-                    description: "Supply, fabrication and erection of M.S. painted four pole structure",
-                    unit: "Set",
-                    quantity: 2,
-                    unitRateSupply: 40740,
-                    unitRateInstallation: 5000,
-                    totalAmount: 91480,
-                  }
-                ]
-              }
-            ]
-          }
-        };
-
-        setAnalysisData(mockAnalysisData.data);
-        setImporting(false);
-        setAnalysisProgress(0);
-        toast.info("Dummy Excel analyzed successfully. Review matches below.");
-      }, 400);
-    }, 2000);
-  };
-
-  //dummy end
 
   // Step 1: Send file for Analysis
   const handleImport = async () => {
@@ -2797,10 +2728,9 @@ export default function ConstructionBOQPage() {
     setAnalysisProgress(10);
     setProgressMessage("Parsing Excel rows & checking Item Master...");
 
-    // Simulate smooth progress increments while waiting for server response
     const progressInterval = setInterval(() => {
       setAnalysisProgress((prev) => {
-        if (prev >= 90) return prev; // Hold at 90% until server responds
+        if (prev >= 90) return prev;
         const next = prev + Math.floor(Math.random() * 8) + 3;
         if (next > 35 && next < 70) setProgressMessage("Running AI typo correction & fuzzy matching...");
         if (next >= 70) setProgressMessage("Preparing review preview...");
@@ -2889,6 +2819,26 @@ export default function ConstructionBOQPage() {
     label: c.customerName || c.name || c.contactPersonName || c._id,
   }));
 
+  // ─── Initial Page Loader ──────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50/60 flex flex-col items-center justify-center p-6">
+        <div className="relative flex items-center justify-center">
+          <div className="w-16 h-16 rounded-2xl border-4 border-indigo-100 border-t-indigo-600 animate-spin" />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <FaFileInvoice className="text-indigo-600 animate-pulse text-lg" />
+          </div>
+        </div>
+        <p className="mt-4 text-xs font-black uppercase tracking-[0.2em] text-slate-700">
+          Loading BOQs...
+        </p>
+        <span className="text-[11px] text-slate-400 mt-1">
+          Fetching projects, contractor details, and Item Master records
+        </span>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-10">
       <datalist id="item-master-names">
@@ -2912,13 +2862,13 @@ export default function ConstructionBOQPage() {
           <div className="flex gap-2">
             <button
               onClick={() => setIsImportModalOpen(true)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-sm hover:bg-emerald-700 shadow-lg shadow-emerald-100 transition-all"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-sm hover:bg-emerald-700 shadow-lg shadow-emerald-100 transition-all cursor-pointer"
             >
               <FaFileExcel size={12} /> Import Excel
             </button>
             <button
               onClick={() => openModal()}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all"
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all cursor-pointer"
             >
               <FaPlus size={12} /> New BOQ
             </button>
@@ -2944,13 +2894,7 @@ export default function ConstructionBOQPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {loading ? (
-                  <tr>
-                    <td colSpan="10" className="px-6 py-10 text-center text-gray-400 italic">
-                      Loading BOQs...
-                    </td>
-                  </tr>
-                ) : boqs.length === 0 ? (
+                {boqs.length === 0 ? (
                   <tr>
                     <td colSpan="10" className="px-6 py-10 text-center text-gray-400 italic">
                       No BOQs found. Import from Excel or create manually.
@@ -2984,7 +2928,7 @@ export default function ConstructionBOQPage() {
                       <td className="px-6 py-4 text-right relative">
                         <button
                           onClick={() => setOpenMenuId(openMenuId === b._id ? null : b._id)}
-                          className="p-2 text-gray-300 hover:text-indigo-600 transition-colors"
+                          className="p-2 text-gray-300 hover:text-indigo-600 transition-colors cursor-pointer"
                         >
                           <HiDotsVertical size={18} />
                         </button>
@@ -2992,14 +2936,14 @@ export default function ConstructionBOQPage() {
                           <div className="absolute right-0 mt-1 w-40 bg-white rounded-xl shadow-xl border border-gray-100 py-1 z-50">
                             <button
                               onClick={() => handleEdit(b)}
-                              className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-700 hover:bg-indigo-50 transition-colors"
+                              className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-700 hover:bg-indigo-50 transition-colors cursor-pointer"
                             >
                               <FaEdit size={14} className="text-indigo-500" />
                               Edit
                             </button>
                             <button
                               onClick={() => handleDelete(b._id)}
-                              className="flex items-center gap-2 w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                              className="flex items-center gap-2 w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
                             >
                               <FaTrashAlt size={14} />
                               Delete
@@ -3126,7 +3070,7 @@ export default function ConstructionBOQPage() {
                   <button
                     type="button"
                     onClick={() => dispatch({ type: "ADD_SECTION" })}
-                    className="flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-800"
+                    className="flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-800 cursor-pointer"
                   >
                     <FaPlus size={10} /> Add Section
                   </button>
@@ -3160,13 +3104,13 @@ export default function ConstructionBOQPage() {
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="text-sm font-bold text-gray-400 hover:text-gray-600 uppercase tracking-widest"
+                  className="text-sm font-bold text-gray-400 hover:text-gray-600 uppercase tracking-widest cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex items-center gap-2 px-8 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all"
+                  className="flex items-center gap-2 px-8 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all cursor-pointer"
                 >
                   <FaCheck size={12} /> {editBOQ ? "Update BOQ" : "Create BOQ"}
                 </button>
@@ -3197,7 +3141,7 @@ export default function ConstructionBOQPage() {
                   setIsImportModalOpen(false);
                   setAnalysisData(null);
                 }}
-                className="text-gray-400 hover:text-gray-600 font-bold"
+                className="text-gray-400 hover:text-gray-600 font-bold cursor-pointer"
               >
                 <FaTimes size={20} />
               </button>
@@ -3230,15 +3174,19 @@ export default function ConstructionBOQPage() {
                   {/* Summary Metric Badges */}
                   <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
                     <div className="flex items-center gap-2">
-                      <span className="bg-purple-50 text-purple-700 px-3 py-1 rounded-full font-bold border border-purple-200 flex items-center gap-1.5">
-                        ✨ AI Suggestions: {analysisData.itemsSuggested}
+                      <span className="bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full font-bold border border-emerald-200 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                        Existing in Master: {analysisData.itemsInMaster}
                       </span>
-                      <span className="bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full font-bold border border-emerald-200">
-                        Master Matches: {analysisData.itemsInMaster}
+                      <span className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full font-bold border border-blue-200 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                        New Line Item: {analysisData.itemsNew}
                       </span>
-                      <span className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full font-bold border border-blue-200">
-                        New Items: {analysisData.itemsNew}
-                      </span>
+                      {analysisData.itemsSuggested > 0 && (
+                        <span className="bg-purple-50 text-purple-700 px-3 py-1 rounded-full font-bold border border-purple-200 flex items-center gap-1.5">
+                          ✨ AI Cleaned: {analysisData.itemsSuggested}
+                        </span>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -3259,7 +3207,7 @@ export default function ConstructionBOQPage() {
                             })),
                           }));
                         }}
-                        className="text-[11px] font-bold text-violet-700 hover:text-violet-900 bg-violet-50 px-2.5 py-1 rounded-md border border-violet-200 transition-colors"
+                        className="text-[11px] font-bold text-violet-700 hover:text-violet-900 bg-violet-50 px-2.5 py-1 rounded-md border border-violet-200 transition-colors cursor-pointer"
                       >
                         ✨ Accept All AI Names
                       </button>
@@ -3280,7 +3228,7 @@ export default function ConstructionBOQPage() {
                             })),
                           }));
                         }}
-                        className="text-[11px] font-bold text-gray-500 hover:text-gray-700 bg-gray-100 px-2.5 py-1 rounded-md transition-colors"
+                        className="text-[11px] font-bold text-gray-500 hover:text-gray-700 bg-gray-100 px-2.5 py-1 rounded-md transition-colors cursor-pointer"
                       >
                         Revert to Original
                       </button>
@@ -3299,7 +3247,7 @@ export default function ConstructionBOQPage() {
                           </th>
                           <th className="px-3 py-2">Master Match</th>
                           <th className="px-3 py-2 text-center">Score</th>
-                          <th className="px-3 py-2 text-center">Action</th>
+                          <th className="px-3 py-2 text-center w-36">Status</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
@@ -3318,7 +3266,7 @@ export default function ConstructionBOQPage() {
                                   <button
                                     type="button"
                                     onClick={() => toggleRowExpand(row.id)}
-                                    className="flex items-center gap-1 mx-auto hover:text-indigo-600 font-bold"
+                                    className="flex items-center gap-1 mx-auto hover:text-indigo-600 font-bold cursor-pointer"
                                     title="Click to toggle description lines"
                                   >
                                     <span className="text-[10px] text-gray-400">
@@ -3334,7 +3282,7 @@ export default function ConstructionBOQPage() {
                                     <button
                                       type="button"
                                       onClick={() => toggleRowExpand(row.id)}
-                                      className="text-[10px] font-bold text-indigo-600 hover:underline mt-0.5"
+                                      className="text-[10px] font-bold text-indigo-600 hover:underline mt-0.5 cursor-pointer"
                                     >
                                       {descCount} detailed line{descCount > 1 ? "s" : ""}
                                     </button>
@@ -3387,60 +3335,15 @@ export default function ConstructionBOQPage() {
                                 </td>
 
                                 <td className="px-3 py-2 text-center">
-                                  {row.status === "in_master" ? (
-                                    <span className="text-emerald-600 font-bold text-xs">
-                                      Merge (Master)
+                                  {row.status === "in_master" || row.matchedMasterItem ? (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-700 font-bold text-[11px]">
+                                      <FaCheck size={9} className="text-emerald-600" />
+                                      Already Available
                                     </span>
                                   ) : (
-                                    <div className="flex justify-center gap-1">
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setAnalysisData((prev) => ({
-                                            ...prev,
-                                            items: prev.items.map((i) =>
-                                              i.id === row.id
-                                                ? {
-                                                  ...i,
-                                                  action: "merge",
-                                                  selectedMasterId: i.matchedMasterItem?._id,
-                                                }
-                                                : i
-                                            ),
-                                          }));
-                                        }}
-                                        disabled={!row.matchedMasterItem}
-                                        className={`px-2 py-1 rounded text-[10px] font-bold ${row.action === "merge"
-                                          ? "bg-emerald-600 text-white"
-                                          : "bg-gray-100 text-gray-600 hover:bg-gray-200 disabled:opacity-30"
-                                          }`}
-                                      >
-                                        Merge
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setAnalysisData((prev) => ({
-                                            ...prev,
-                                            items: prev.items.map((i) =>
-                                              i.id === row.id
-                                                ? {
-                                                  ...i,
-                                                  action: "create_new",
-                                                  selectedMasterId: null,
-                                                }
-                                                : i
-                                            ),
-                                          }));
-                                        }}
-                                        className={`px-2 py-1 rounded text-[10px] font-bold ${row.action === "create_new"
-                                          ? "bg-blue-600 text-white"
-                                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                                          }`}
-                                      >
-                                        Create New
-                                      </button>
-                                    </div>
+                                    <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-slate-100 border border-slate-200 text-slate-600 font-bold text-[11px]">
+                                      New Item
+                                    </span>
                                   )}
                                 </td>
                               </tr>
@@ -3469,7 +3372,7 @@ export default function ConstructionBOQPage() {
                                             <th className="px-2 py-2 text-center w-14">Qty</th>
                                             <th className="px-2 py-2 text-center w-14">Unit</th>
                                             <th className="px-3 py-2 text-right w-24">Supply Rate</th>
-                                            <th className="px-3 py-2 text-center w-28">Action</th>
+                                            <th className="px-3 py-2 text-center w-36">Item Master Status</th>
                                           </tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-100">
@@ -3484,7 +3387,6 @@ export default function ConstructionBOQPage() {
                                                   {desc.srNo || `${row.itemSerialNo}.${dIdx + 1}`}
                                                 </td>
 
-                                                {/* GitHub-style inline diff description */}
                                                 <td className="px-3 py-2 align-top">
                                                   {isChanged ? (
                                                     <div className="space-y-1">
@@ -3532,7 +3434,6 @@ export default function ConstructionBOQPage() {
                                                   )}
                                                 </td>
 
-                                                {/* Specific Matched Description from Item Master */}
                                                 <td className="px-3 py-2 align-top">
                                                   {desc.matchedMasterItem ? (
                                                     <div className="leading-tight">
@@ -3551,7 +3452,6 @@ export default function ConstructionBOQPage() {
                                                   )}
                                                 </td>
 
-                                                {/* Match Score Badge */}
                                                 <td className="px-2 py-2 text-center align-top">
                                                   <span
                                                     className={`font-black px-1.5 py-0.5 rounded text-[10px] ${desc.matchScore >= 85
@@ -3577,67 +3477,20 @@ export default function ConstructionBOQPage() {
                                                   {desc.unitRateSupply ? `₹${desc.unitRateSupply.toLocaleString("en-IN")}` : "—"}
                                                 </td>
 
-                                                {/* Action Toggle: Merge vs New */}
                                                 <td className="px-3 py-2 text-center align-top">
-                                                  <div className="flex items-center justify-center gap-1">
-                                                    <button
-                                                      type="button"
-                                                      disabled={!desc.matchedMasterItem}
-                                                      onClick={() => {
-                                                        setAnalysisData((prev) => ({
-                                                          ...prev,
-                                                          items: prev.items.map((it) =>
-                                                            it.id === row.id
-                                                              ? {
-                                                                ...it,
-                                                                descriptions: it.descriptions.map((d, i) =>
-                                                                  i === dIdx
-                                                                    ? {
-                                                                      ...d,
-                                                                      action: "merge",
-                                                                      selectedMasterId: d.matchedMasterItem?._id,
-                                                                    }
-                                                                    : d
-                                                                ),
-                                                              }
-                                                              : it
-                                                          ),
-                                                        }));
-                                                      }}
-                                                      className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors ${desc.action === "merge"
-                                                        ? "bg-emerald-600 text-white"
-                                                        : "bg-gray-100 text-gray-500 hover:bg-gray-200 disabled:opacity-30"
-                                                        }`}
+                                                  {desc.matchedMasterItem ? (
+                                                    <span
+                                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-700 font-bold text-[10px]"
+                                                      title={`Linked to: ${desc.matchedMasterItem.itemName} (${desc.matchedMasterItem.itemCode || "NO-CODE"})`}
                                                     >
-                                                      Merge
-                                                    </button>
-                                                    <button
-                                                      type="button"
-                                                      onClick={() => {
-                                                        setAnalysisData((prev) => ({
-                                                          ...prev,
-                                                          items: prev.items.map((it) =>
-                                                            it.id === row.id
-                                                              ? {
-                                                                ...it,
-                                                                descriptions: it.descriptions.map((d, i) =>
-                                                                  i === dIdx
-                                                                    ? { ...d, action: "create_new", selectedMasterId: null }
-                                                                    : d
-                                                                ),
-                                                              }
-                                                              : it
-                                                          ),
-                                                        }));
-                                                      }}
-                                                      className={`px-2 py-0.5 rounded text-[10px] font-bold transition-colors ${desc.action === "create_new"
-                                                        ? "bg-blue-600 text-white"
-                                                        : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                                                        }`}
-                                                    >
-                                                      New
-                                                    </button>
-                                                  </div>
+                                                      <FaCheck size={8} className="text-emerald-600" />
+                                                      Already in Master
+                                                    </span>
+                                                  ) : (
+                                                    <span className="inline-flex items-center px-2 py-0.5 rounded bg-blue-50 border border-blue-200 text-blue-700 font-bold text-[10px]">
+                                                      New BOQ Item
+                                                    </span>
+                                                  )}
                                                 </td>
                                               </tr>
                                             );
@@ -3662,41 +3515,32 @@ export default function ConstructionBOQPage() {
             <div className="flex items-center justify-end gap-3 pt-3 border-t border-gray-100 shrink-0">
               {importing ? (
                 <div className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 flex items-center justify-between shadow-inner">
-
-                  {/* Status Message on Left */}
                   <div className="flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse inline-block" />
                     <span className="text-xs font-bold text-gray-700">{progressMessage}</span>
                   </div>
 
-                  {/* Clean Rectangle Progress Box */}
                   <div className="relative w-32 h-9 border border-gray-300 rounded-xl overflow-hidden flex items-center shrink-0 bg-white shadow-sm">
-
-                    {/* Background text layer (Dark text visible over white background) */}
                     <div className="absolute inset-0 flex items-center justify-center z-0">
                       <span className="text-xs font-mono font-bold text-slate-700">
                         {analysisProgress}%
                       </span>
                     </div>
 
-                    {/* Progress Fill Level */}
                     <div
                       className="absolute inset-y-0 left-0 bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-300 ease-out z-10 overflow-hidden"
                       style={{ width: `${analysisProgress}%` }}
                     >
-                      {/* Foreground text layer inside the fill (White text visible over green fill, perfectly clipped) */}
                       <div
                         className="absolute inset-0 flex items-center justify-center"
-                        style={{ width: "128px" /* Matches box width so text doesn't stretch */ }}
+                        style={{ width: "128px" }}
                       >
                         <span className="text-xs font-mono font-bold text-white">
                           {analysisProgress}%
                         </span>
                       </div>
                     </div>
-
                   </div>
-
                 </div>
               ) : (
                 <>
@@ -3722,9 +3566,24 @@ export default function ConstructionBOQPage() {
                     <button
                       onClick={handleFinalLoad}
                       disabled={loadingFinal}
-                      className="px-5 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 disabled:opacity-50 transition-all shadow-lg shadow-indigo-100 cursor-pointer"
+                      className="relative overflow-hidden flex items-center justify-center gap-2.5 px-6 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 disabled:bg-indigo-500 disabled:cursor-not-allowed transition-all shadow-lg shadow-indigo-100 cursor-pointer min-w-[190px]"
                     >
-                      {loadingFinal ? "Loading Data..." : "Load Data into BOQ"}
+                      {/* Shimmer sweep effect while loading */}
+                      {loadingFinal && (
+                        <span className="absolute inset-0 -translate-x-full animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/20 to-transparent pointer-events-none" />
+                      )}
+
+                      {loadingFinal ? (
+                        <>
+                          <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin shrink-0" />
+                          <span className="tracking-wide">Importing to BOQ...</span>
+                        </>
+                      ) : (
+                        <>
+                          <FaCheck size={12} />
+                          <span>Load Data into BOQ</span>
+                        </>
+                      )}
                     </button>
                   )}
                 </>
