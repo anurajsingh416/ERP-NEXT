@@ -9,6 +9,8 @@ export default function AISettingsModal({ isOpen, onClose }) {
     const [apiKey, setApiKey] = useState("");
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [isConfigured, setIsConfigured] = useState(false);
+    const [maskedKey, setMaskedKey] = useState("");
 
     useEffect(() => {
         if (!isOpen) return;
@@ -17,14 +19,16 @@ export default function AISettingsModal({ isOpen, onClose }) {
             setLoading(true);
             try {
                 const token = localStorage.getItem("token");
-                const res = await api.get("/settings/company", {
-                    headers: { Authorization: `Bearer ${token}` },
+                const res = await fetch("/api/ai-key", { // adjust path to your route
+                    headers: { Authorization: `Bearer ${token}` }
                 });
-                if (res.data?.data?.anthropicApiKey) {
-                    setApiKey(res.data.data.anthropicApiKey);
+                const data = await res.json();
+                if (data.success) {
+                    setIsConfigured(Boolean(data.isConfigured));
+                    setMaskedKey(data.maskedKey || "");
                 }
             } catch (err) {
-                console.error("Failed to load settings:", err);
+                console.error("Failed to load AI settings:", err);
             } finally {
                 setLoading(false);
             }
@@ -68,7 +72,26 @@ export default function AISettingsModal({ isOpen, onClose }) {
                             <FaRobot size={18} />
                         </div>
                         <div>
-                            <h3 className="text-sm font-black text-gray-900">AI Integration Settings</h3>
+                            <div className="flex items-center gap-2.5">
+                                <h3 className="text-sm font-black text-gray-900">AI Integration Settings</h3>
+
+                                {loading ? (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-500 border border-gray-200">
+                                        Checking...
+                                    </span>
+                                ) : isConfigured ? (
+                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                        Configured {maskedKey ? `(${maskedKey})` : ""}
+                                    </span>
+                                ) : (
+                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200 shadow-2xs">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                                        Not Configured
+                                    </span>
+                                )}
+                            </div>
+                            {/* <h3 className="text-sm font-black text-gray-900">AI Integration Settings</h3> */}
                             <p className="text-[11px] text-gray-400">Configure Anthropic Claude API for BOQ proofreading</p>
                         </div>
                     </div>

@@ -1413,8 +1413,6 @@ function AICleanPreviewModal({ isOpen, onClose, onConfirm, changes, isSaving }) 
   );
 }
 
-
-
 export default function BOQDetailsPage() {
   const { id } = useParams();
   const router = useRouter();
@@ -1452,12 +1450,13 @@ export default function BOQDetailsPage() {
   const [addItemsSelected, setAddItemsSelected] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
 
-  // ─── Sales Invoice Generator State  ──────────────
+  // ─── Invoice Generator State ─────────────────────────────────────────
   const [isItemInvoiceModalOpen, setIsItemInvoiceModalOpen] = useState(false);
   const [invoiceMode, setInvoiceMode] = useState("item"); // "item" | "full_boq"
+  const [invoiceTargetType, setInvoiceTargetType] = useState("sales"); // "sales" | "purchase"
   const [selectedInvoiceItem, setSelectedInvoiceItem] = useState(null);
-  const [invoiceLines, setInvoiceLines] = useState([]); // Editable line items
-  const [invoiceGstRate, setInvoiceGstRate] = useState(0); // 1. Editable GST Rate
+  const [invoiceLines, setInvoiceLines] = useState([]);
+  const [invoiceGstRate, setInvoiceGstRate] = useState(0);
   const [warehouses, setWarehouses] = useState([]);
   const [selectedWarehouseId, setSelectedWarehouseId] = useState("");
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split("T")[0]);
@@ -1471,10 +1470,17 @@ export default function BOQDetailsPage() {
   const [paidAmountInput, setPaidAmountInput] = useState(0);
   const [invoiceAttachments, setInvoiceAttachments] = useState([]);
   const [generatingInvoice, setGeneratingInvoice] = useState(false);
+
+  // Customer Form States
   const [invoiceCustomerId, setInvoiceCustomerId] = useState("");
   const [invoiceCustomerName, setInvoiceCustomerName] = useState("");
   const [invoiceCustomerCode, setInvoiceCustomerCode] = useState("");
   const [invoiceContactPerson, setInvoiceContactPerson] = useState("");
+
+  // Supplier / Contractor Form States
+  const [invoiceSupplierId, setInvoiceSupplierId] = useState("");
+  const [invoiceSupplierName, setInvoiceSupplierName] = useState("");
+  const [invoiceSupplierCode, setInvoiceSupplierCode] = useState("");
 
   // ─── Fetch BOQ + related data ──────────────────────────────────────
   useEffect(() => {
@@ -1495,29 +1501,28 @@ export default function BOQDetailsPage() {
         try {
           const woRes = await api.get(`/construction/work-orders?boqId=${id}`, headers);
           setWorkOrders(woRes.data.data || woRes.data || []);
-        } catch (err) {
-          console.warn("⚠️ Work orders fetch failed:", err);
+        } catch {
           setWorkOrders([]);
         }
 
         try {
           const supRes = await api.get("/suppliers", headers);
           setSuppliers(supRes.data?.data || supRes.data || []);
-        } catch (err) {
+        } catch {
           setSuppliers([]);
         }
 
         try {
           const custRes = await api.get("/customers", headers);
           setCustomers(custRes.data?.data || custRes.data || []);
-        } catch (err) {
+        } catch {
           setCustomers([]);
         }
 
         try {
           const pRes = await api.get("/construction/projects", headers);
           setProjects(pRes.data.data || pRes.data || []);
-        } catch (err) {
+        } catch {
           setProjects([]);
         }
       } catch (err) {
@@ -1530,7 +1535,7 @@ export default function BOQDetailsPage() {
     fetchData();
   }, [id, router]);
 
-  // Warehouse fetch with dual endpoint fallback & token validation
+  // ─── Fetch Warehouses ──────────────────────────────────────────────
   useEffect(() => {
     const fetchWarehouses = async () => {
       try {
@@ -1556,7 +1561,7 @@ export default function BOQDetailsPage() {
     fetchWarehouses();
   }, []);
 
-  // ─── Fetch general inventory items from Master ─────────────────────
+  // ─── Fetch inventory items from Master ─────────────────────────────
   useEffect(() => {
     const fetchItems = async () => {
       try {
@@ -1615,13 +1620,8 @@ export default function BOQDetailsPage() {
   const sectionSubSectionMap = getSectionSubSectionMap();
   const materialSectionMap = getMaterialsSectionMap();
 
-  const getItemsForSubSection = (section, subSection) => {
-    return sectionSubSectionMap[section]?.[subSection] || [];
-  };
-
-  const getMaterialsForSubSection = (section, subSection) => {
-    return materialSectionMap[section]?.[subSection] || [];
-  };
+  const getItemsForSubSection = (section, subSection) => sectionSubSectionMap[section]?.[subSection] || [];
+  const getMaterialsForSubSection = (section, subSection) => materialSectionMap[section]?.[subSection] || [];
 
   const getAllSubSectionOptions = () => {
     const options = [];
@@ -1673,7 +1673,7 @@ export default function BOQDetailsPage() {
     );
   };
 
-  // ─── Work Order Construction from Hierarchical Items ─────────────────
+  // ─── Work Order Builders ──────────────────────────────────────────
   const buildWoItemFromBoqDescLine = (parentItem, descLine, section, subSection) => ({
     _id: generateId(),
     boqItemId: parentItem._id,
@@ -1847,7 +1847,7 @@ export default function BOQDetailsPage() {
     }
   };
 
-  // ─── Add Materials Submission ─────────────────────────────────────────
+  // ─── Add Materials Submission ───────────────────────────────────────
   const openAddItemsModal = (sectionName) => {
     const sections = Object.keys(sectionSubSectionMap);
     setAddItemsSection(sectionName || (sections.length > 0 ? sections[0] : ""));
@@ -1968,14 +1968,406 @@ export default function BOQDetailsPage() {
     }
   };
 
-  const goToProgressBilling = () => {
-    router.push(`/admin/construction/progress-billing?boqId=${id}`);
+  // ─── Initialize Parties from BOQ ──────────────────────────────────
+  const initInvoiceParties = () => {
+    // Customer
+    const cust = boq?.customer;
+    const custId = cust?._id || cust || "";
+    setInvoiceCustomerId(custId);
+    if (cust && typeof cust === "object") {
+      setInvoiceCustomerName(cust.customerName || cust.name || "");
+      setInvoiceCustomerCode(cust.customerCode || cust.code || "—");
+      setInvoiceContactPerson(cust.contactPersonName || cust.contactPerson || "—");
+    } else if (custId) {
+      const matched = customers.find((c) => String(c._id) === String(custId));
+      setInvoiceCustomerName(matched?.customerName || matched?.name || "");
+      setInvoiceCustomerCode(matched?.customerCode || matched?.code || "—");
+      setInvoiceContactPerson(matched?.contactPersonName || matched?.contactPerson || "—");
+    } else {
+      setInvoiceCustomerName("");
+      setInvoiceCustomerCode("");
+      setInvoiceContactPerson("");
+    }
+
+    // Supplier / Contractor
+    const cont = boq?.contractor;
+    const contId = cont?._id || cont || "";
+    setInvoiceSupplierId(contId);
+    if (cont && typeof cont === "object") {
+      setInvoiceSupplierName(cont.supplierName || cont.name || "");
+      setInvoiceSupplierCode(cont.supplierCode || cont.code || "—");
+    } else if (contId) {
+      const matched = suppliers.find((s) => String(s._id) === String(contId));
+      setInvoiceSupplierName(matched?.supplierName || matched?.name || "");
+      setInvoiceSupplierCode(matched?.supplierCode || matched?.code || "—");
+    } else {
+      setInvoiceSupplierName("");
+      setInvoiceSupplierCode("");
+    }
   };
 
-  const goToSectionInvoice = (sectionName) => {
-    router.push(
-      `/admin/construction/progress-billing?boqId=${id}&section=${encodeURIComponent(sectionName)}`
+  // ─── Trigger 1: Single Item Invoice ─────────────────────────────────
+  const openItemInvoiceModal = (parentItem, sectionName) => {
+    if (!parentItem) return;
+    setInvoiceMode("item");
+    setInvoiceTargetType("sales");
+    initInvoiceParties();
+
+    const lines = (parentItem.descriptions || []).map((desc) => {
+      const isHeader =
+        (!desc.quantity || Number(desc.quantity) === 0) &&
+        (!desc.unitRateSupply || Number(desc.unitRateSupply) === 0) &&
+        (!desc.unitRateInstallation || Number(desc.unitRateInstallation) === 0);
+
+      const initialQty = isHeader ? 0 : Number(desc.quantity) || 1;
+
+      return {
+        _id: desc._id,
+        itemId: desc.itemId || null,
+        parentItemId: parentItem._id,
+        parentName: parentItem.itemName,
+        srNo: desc.srNo || "",
+        description: desc.description || "",
+        unit: desc.unit || "nos",
+        quantity: initialQty,
+        unitRateSupply: Number(desc.unitRateSupply) || 0,
+        unitRateInstallation: Number(desc.unitRateInstallation) || 0,
+        isHeader,
+        selected: !isHeader,
+        materials: desc.materials || [],
+      };
+    });
+
+    setSelectedInvoiceItem({
+      parentItem,
+      sectionName,
+      itemName: parentItem.itemName,
+      itemSerialNo: parentItem.itemSerialNo,
+      scopeExplanation: parentItem.sectionSpecification || "",
+    });
+
+    setInvoiceLines(lines);
+    setInvoiceGstRate(0);
+    setInvoiceDate(new Date().toISOString().split("T")[0]);
+    setInvoiceDueDate("");
+    setInvoiceOrderDate(boq?.date ? new Date(boq.date).toISOString().split("T")[0] : "");
+    setInvoiceRefNumber(boq?.boqNumber || "");
+    setInvoiceRemarks(parentItem.sectionSpecification || "");
+    setInvoiceFreight(0);
+    setInvoiceRounding(0);
+    setPaidAmountInput(0);
+    setInvoiceAttachments([]);
+    setIsItemInvoiceModalOpen(true);
+  };
+
+  // ─── Trigger 2: Full BOQ Invoice ────────────────────────────────────
+  const openFullBoqInvoiceModal = () => {
+    if (!boq || !Array.isArray(boq.items)) return;
+    setInvoiceMode("full_boq");
+    setInvoiceTargetType("sales");
+    initInvoiceParties();
+
+    const allLines = [];
+    boq.items.forEach((parent) => {
+      (parent.descriptions || []).forEach((desc) => {
+        const isHeader =
+          (!desc.quantity || Number(desc.quantity) === 0) &&
+          (!desc.unitRateSupply || Number(desc.unitRateSupply) === 0) &&
+          (!desc.unitRateInstallation || Number(desc.unitRateInstallation) === 0);
+
+        const initialQty = isHeader ? 0 : Number(desc.quantity) || 1;
+
+        allLines.push({
+          _id: desc._id,
+          itemId: desc.itemId || null,
+          parentItemId: parent._id,
+          parentName: parent.itemName,
+          sectionName: parent.section || "Other Work",
+          srNo: desc.srNo || "",
+          description: desc.description || "",
+          unit: desc.unit || "nos",
+          quantity: initialQty,
+          unitRateSupply: Number(desc.unitRateSupply) || 0,
+          unitRateInstallation: Number(desc.unitRateInstallation) || 0,
+          isHeader,
+          selected: !isHeader,
+          materials: desc.materials || [],
+        });
+      });
+    });
+
+    setSelectedInvoiceItem({
+      parentItem: null,
+      sectionName: "All Sections",
+      itemName: `Full BOQ (${boq.boqNumber})`,
+      itemSerialNo: boq.boqNumber,
+      scopeExplanation: boq.remarks || "",
+    });
+
+    setInvoiceLines(allLines);
+    setInvoiceGstRate(0);
+    setInvoiceDate(new Date().toISOString().split("T")[0]);
+    setInvoiceDueDate("");
+    setInvoiceOrderDate(boq?.date ? new Date(boq.date).toISOString().split("T")[0] : "");
+    setInvoiceRefNumber(boq?.boqNumber || "");
+    setInvoiceRemarks(boq.remarks || "");
+    setInvoiceFreight(0);
+    setInvoiceRounding(0);
+    setPaidAmountInput(0);
+    setInvoiceAttachments([]);
+    setIsItemInvoiceModalOpen(true);
+  };
+
+  const handleCustomerSelect = (selectedId) => {
+    setInvoiceCustomerId(selectedId);
+    const matched = customers.find((c) => String(c._id) === String(selectedId));
+    if (matched) {
+      setInvoiceCustomerName(matched.customerName || matched.name || "");
+      setInvoiceCustomerCode(matched.customerCode || matched.code || "—");
+      setInvoiceContactPerson(matched.contactPersonName || matched.contactPerson || "—");
+    } else {
+      setInvoiceCustomerName("");
+      setInvoiceCustomerCode("");
+      setInvoiceContactPerson("");
+    }
+  };
+
+  const handleSupplierSelect = (selectedId) => {
+    setInvoiceSupplierId(selectedId);
+    const matched = suppliers.find((s) => String(s._id) === String(selectedId));
+    if (matched) {
+      setInvoiceSupplierName(matched.supplierName || matched.name || "");
+      setInvoiceSupplierCode(matched.supplierCode || matched.code || "—");
+    } else {
+      setInvoiceSupplierName("");
+      setInvoiceSupplierCode("");
+    }
+  };
+
+  const toggleLine = (lineId) => {
+    setInvoiceLines((prev) => {
+      const target = prev.find((l) => l._id === lineId);
+      if (!target) return prev;
+
+      const newSelected = !target.selected;
+
+      if (target.isHeader) {
+        const targetPrefix = target.srNo.trim();
+        return prev.map((l) => {
+          if (l._id === lineId) return { ...l, selected: newSelected };
+          if (l.srNo && l.srNo.startsWith(targetPrefix + ".")) {
+            return { ...l, selected: newSelected };
+          }
+          return l;
+        });
+      }
+
+      return prev.map((l) => (l._id === lineId ? { ...l, selected: newSelected } : l));
+    });
+  };
+
+  const handleSingleQtyChange = (lineId, val) => {
+    const newQty = parseFloat(val) || 0;
+    setInvoiceLines((prev) =>
+      prev.map((l) => (l._id === lineId ? { ...l, quantity: newQty } : l))
     );
+  };
+
+  // ─── Create Invoice Handler ─────────────────────────────────────────
+  const handleConfirmInvoice = async (e) => {
+    e.preventDefault();
+
+    const activeLines = invoiceLines.filter((l) => l.selected && !l.isHeader);
+    if (activeLines.length === 0) {
+      toast.error("Please select at least one billable item row.");
+      return;
+    }
+
+    if (invoiceTargetType === "sales" && !invoiceCustomerId) {
+      toast.error("Please select a customer for the Sales Invoice.");
+      return;
+    }
+    if (invoiceTargetType === "purchase" && !invoiceSupplierId) {
+      toast.error("Please select a supplier/contractor for the Purchase Invoice.");
+      return;
+    }
+
+    const defaultWarehouse = selectedWarehouseId || warehouses[0]?._id || null;
+    const defaultWarehouseName =
+      warehouses.find((w) => w._id === defaultWarehouse)?.warehouseName || "Main Warehouse";
+
+    const formattedItems = [];
+    activeLines.forEach((line) => {
+      const qty = parseFloat(line.quantity) || 0;
+      if (qty <= 0) return;
+
+      const validItemId = line.itemId || selectedInvoiceItem?.parentItem?.itemId || null;
+
+      if (line.unitRateSupply > 0) {
+        const supplyAmt = qty * line.unitRateSupply;
+        const supplyGst = (supplyAmt * (Number(invoiceGstRate) || 0)) / 100;
+
+        formattedItems.push({
+          item: validItemId,
+          itemCode: line.srNo || "ITEM",
+          itemName: `${line.description} (Supply)`,
+          quantity: qty,
+          unitPrice: line.unitRateSupply,
+          discount: 0,
+          amount: supplyAmt,
+          totalAmount: supplyAmt,
+          taxOption: "GST",
+          gstRate: Number(invoiceGstRate) || 0,
+          cgstAmount: supplyGst / 2,
+          sgstAmount: supplyGst / 2,
+          taxAmount: supplyGst,
+          warehouse: defaultWarehouse,
+          warehouseName: defaultWarehouseName,
+        });
+      }
+
+      if (line.unitRateInstallation > 0) {
+        const installAmt = qty * line.unitRateInstallation;
+        const installGst = (installAmt * (Number(invoiceGstRate) || 0)) / 100;
+
+        formattedItems.push({
+          item: validItemId,
+          itemCode: line.srNo || "ITEM",
+          itemName: `${line.description} (Installation)`,
+          quantity: qty,
+          unitPrice: line.unitRateInstallation,
+          discount: 0,
+          amount: installAmt,
+          totalAmount: installAmt,
+          taxOption: "GST",
+          gstRate: Number(invoiceGstRate) || 0,
+          cgstAmount: installGst / 2,
+          sgstAmount: installGst / 2,
+          taxAmount: installGst,
+          warehouse: defaultWarehouse,
+          warehouseName: defaultWarehouseName,
+        });
+      }
+    });
+
+    if (formattedItems.length === 0) {
+      toast.error("All selected items have 0 billable quantities or rates.");
+      return;
+    }
+
+    const subTotal = formattedItems.reduce((acc, it) => acc + it.totalAmount, 0);
+    const gstTotal = (subTotal * (Number(invoiceGstRate) || 0)) / 100;
+    const freight = parseFloat(invoiceFreight) || 0;
+    const rounding = parseFloat(invoiceRounding) || 0;
+    const grandTotal = subTotal + gstTotal + freight + rounding;
+    const initialPaid = Math.min(parseFloat(paidAmountInput) || 0, grandTotal);
+    const openBalance = Math.max(0, grandTotal - initialPaid);
+
+    setGeneratingInvoice(true);
+    try {
+      const token = localStorage.getItem("token");
+      const formData = new FormData();
+
+      if (invoiceTargetType === "sales") {
+        const salesPayload = {
+          sourceModel: "delivery",
+          sourceId: boq._id,
+          customer: invoiceCustomerId,
+          customerName: invoiceCustomerName || "Customer",
+          customerCode: invoiceCustomerCode || "—",
+          contactPerson: invoiceContactPerson || "—",
+          invoiceDate: invoiceDate || new Date().toISOString().split("T")[0],
+          dueDate: invoiceDueDate || null,
+          orderDate: invoiceOrderDate || null,
+          refNumber: invoiceRefNumber || boq.boqNumber || "",
+          remarks: invoiceRemarks || "",
+          items: formattedItems,
+          totalBeforeDiscount: subTotal,
+          subTotal,
+          gstTotal,
+          taxTotal: gstTotal,
+          freight,
+          rounding,
+          grandTotal,
+          paidAmount: initialPaid,
+          remainingAmount: openBalance,
+          openBalance,
+          totalDownPayment: 0,
+          paymentMethod,
+          paymentStatus: initialPaid === 0 ? "Pending" : initialPaid >= grandTotal ? "Paid" : "Partial",
+          payments: initialPaid > 0 ? [{
+            amount: initialPaid,
+            method: paymentMethod,
+            paymentDate: invoiceDate || new Date(),
+            notes: "Initial payment recorded at creation",
+          }] : [],
+          status: "Open",
+        };
+
+        formData.append("invoiceData", JSON.stringify(salesPayload));
+        invoiceAttachments.forEach((file) => formData.append("attachments", file));
+
+        const res = await api.post("/sales/invoices", formData, {
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "multipart/form-data" },
+        });
+
+        if (res.data?.success) {
+          toast.success(`Sales Invoice ${res.data.data?.invoiceNumber || ""} created!`);
+          setIsItemInvoiceModalOpen(false);
+        }
+      } else {
+        const purchasePayload = {
+          companyId: boq.companyId,
+          supplier: invoiceSupplierId,
+          supplierName: invoiceSupplierName,
+          supplierCode: invoiceSupplierCode,
+          postingDate: invoiceDate || new Date().toISOString().split("T")[0],
+          dueDate: invoiceDueDate || null,
+          refNumber: invoiceRefNumber || "",
+          remarks: invoiceRemarks || "",
+          items: formattedItems,
+          totalBeforeDiscount: subTotal,
+          subTotal,
+          taxTotal: gstTotal,
+          gstTotal,
+          freight,
+          rounding,
+          grandTotal,
+          paidAmount: initialPaid,
+          remainingAmount: openBalance,
+          status: "submitted",
+          payments: initialPaid > 0 ? [{
+            amount: initialPaid,
+            method: paymentMethod,
+            paymentDate: invoiceDate || new Date(),
+            bankAccountId: null,
+            notes: "Payment recorded at creation",
+          }] : [],
+        };
+
+        formData.append("invoiceData", JSON.stringify(purchasePayload));
+        formData.append("removedFiles", JSON.stringify([]));
+        formData.append("existingFiles", JSON.stringify([]));
+        invoiceAttachments.forEach((file) => formData.append("newAttachments", file));
+
+        const res = await api.post("/purchaseInvoice", formData, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "multipart/form-data",
+          },
+        });
+
+        if (res.data?.success) {
+          toast.success(`Purchase Invoice ${res.data.data?.documentNumberPurchaseInvoice || ""} created!`);
+          setIsItemInvoiceModalOpen(false);
+        }
+      }
+    } catch (err) {
+      console.error("Invoice generation error:", err);
+      toast.error(err.response?.data?.error || err.message || "Failed to create invoice");
+    } finally {
+      setGeneratingInvoice(false);
+    }
   };
 
   const Lbl = ({ text, req }) => (
@@ -1997,10 +2389,7 @@ export default function BOQDetailsPage() {
       cancelled: "bg-red-100 text-red-700",
     };
     return (
-      <span
-        className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${colors[status] || colors.draft
-          }`}
-      >
+      <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${colors[status] || colors.draft}`}>
         {status}
       </span>
     );
@@ -2008,7 +2397,6 @@ export default function BOQDetailsPage() {
 
   const subSectionOptions = getAllSubSectionOptions();
 
-  // Filter strictly to Raw Material items for the materials dropdowns
   const itemOptions = items
     .filter((item) => item.itemType === "Raw Material")
     .map((item) => {
@@ -2068,366 +2456,6 @@ export default function BOQDetailsPage() {
     );
   }
 
-  // ─── Trigger 1: Single Item Invoice ─────────────────────────────────
-  const openItemInvoiceModal = (parentItem, sectionName) => {
-    if (!parentItem) return;
-    setInvoiceMode("item");
-
-    const defaultCust = boq?.customer;
-    const initialCustId = defaultCust?._id || defaultCust || "";
-    setInvoiceCustomerId(initialCustId);
-
-    if (defaultCust && typeof defaultCust === "object") {
-      setInvoiceCustomerName(defaultCust.customerName || defaultCust.name || "");
-      setInvoiceCustomerCode(defaultCust.customerCode || defaultCust.code || "—");
-      setInvoiceContactPerson(defaultCust.contactPersonName || defaultCust.contactPerson || "—");
-    } else if (initialCustId) {
-      // Find from customers array if boq.customer was just an ID string
-      const matched = customers.find((c) => String(c._id) === String(initialCustId));
-      setInvoiceCustomerName(matched?.customerName || matched?.name || "");
-      setInvoiceCustomerCode(matched?.customerCode || matched?.code || "—");
-      setInvoiceContactPerson(matched?.contactPersonName || matched?.contactPerson || "—");
-    } else {
-      setInvoiceCustomerName("");
-      setInvoiceCustomerCode("");
-      setInvoiceContactPerson("");
-    }
-
-    const lines = (parentItem.descriptions || []).map((desc) => {
-      const isHeader =
-        (!desc.quantity || Number(desc.quantity) === 0) &&
-        (!desc.unitRateSupply || Number(desc.unitRateSupply) === 0) &&
-        (!desc.unitRateInstallation || Number(desc.unitRateInstallation) === 0);
-
-      const initialQty = isHeader ? 0 : Number(desc.quantity) || 1;
-
-      return {
-        _id: desc._id,
-        itemId: desc.itemId || null,
-        parentItemId: parentItem._id,
-        parentName: parentItem.itemName,
-        srNo: desc.srNo || "",
-        description: desc.description || "",
-        unit: desc.unit || "nos",
-        quantity: initialQty, // Single Qty column
-        unitRateSupply: Number(desc.unitRateSupply) || 0,
-        unitRateInstallation: Number(desc.unitRateInstallation) || 0,
-        isHeader,
-        selected: !isHeader,
-        materials: desc.materials || [],
-      };
-    });
-
-    setSelectedInvoiceItem({
-      parentItem,
-      sectionName,
-      itemName: parentItem.itemName,
-      itemSerialNo: parentItem.itemSerialNo,
-      scopeExplanation: parentItem.sectionSpecification || "",
-    });
-
-    setInvoiceLines(lines);
-    setInvoiceGstRate(0);
-    setInvoiceDate(new Date().toISOString().split("T")[0]);
-    setInvoiceDueDate("");
-    setInvoiceOrderDate(boq?.date ? new Date(boq.date).toISOString().split("T")[0] : "");
-    setInvoiceRefNumber(boq?.boqNumber || "");
-    setInvoiceRemarks(parentItem.sectionSpecification || "");
-    setInvoiceFreight(0);
-    setInvoiceRounding(0);
-    setPaidAmountInput(0);
-    setIsItemInvoiceModalOpen(true);
-  };
-
-  // ─── Trigger 2: Full BOQ Invoice ────────────────────────────────────
-  const openFullBoqInvoiceModal = () => {
-    if (!boq || !Array.isArray(boq.items)) return;
-    setInvoiceMode("full_boq");
-
-    const defaultCust = boq?.customer;
-    const initialCustId = defaultCust?._id || defaultCust || "";
-    setInvoiceCustomerId(initialCustId);
-
-    if (defaultCust && typeof defaultCust === "object") {
-      setInvoiceCustomerName(defaultCust.customerName || defaultCust.name || "");
-      setInvoiceCustomerCode(defaultCust.customerCode || defaultCust.code || "—");
-      setInvoiceContactPerson(defaultCust.contactPersonName || defaultCust.contactPerson || "—");
-    } else if (initialCustId) {
-      // Find from customers array if boq.customer was just an ID string
-      const matched = customers.find((c) => String(c._id) === String(initialCustId));
-      setInvoiceCustomerName(matched?.customerName || matched?.name || "");
-      setInvoiceCustomerCode(matched?.customerCode || matched?.code || "—");
-      setInvoiceContactPerson(matched?.contactPersonName || matched?.contactPerson || "—");
-    } else {
-      setInvoiceCustomerName("");
-      setInvoiceCustomerCode("");
-      setInvoiceContactPerson("");
-    }
-
-    const allLines = [];
-    boq.items.forEach((parent) => {
-      (parent.descriptions || []).forEach((desc) => {
-        const isHeader =
-          (!desc.quantity || Number(desc.quantity) === 0) &&
-          (!desc.unitRateSupply || Number(desc.unitRateSupply) === 0) &&
-          (!desc.unitRateInstallation || Number(desc.unitRateInstallation) === 0);
-
-        const initialQty = isHeader ? 0 : Number(desc.quantity) || 1;
-
-        allLines.push({
-          _id: desc._id,
-          itemId: desc.itemId || null,
-          parentItemId: parent._id,
-          parentName: parent.itemName,
-          sectionName: parent.section || "Other Work",
-          srNo: desc.srNo || "",
-          description: desc.description || "",
-          unit: desc.unit || "nos",
-          quantity: initialQty,
-          unitRateSupply: Number(desc.unitRateSupply) || 0,
-          unitRateInstallation: Number(desc.unitRateInstallation) || 0,
-          isHeader,
-          selected: !isHeader,
-          materials: desc.materials || [],
-        });
-      });
-    });
-
-    setSelectedInvoiceItem({
-      parentItem: null,
-      sectionName: "All Sections",
-      itemName: `Full BOQ (${boq.boqNumber})`,
-      itemSerialNo: boq.boqNumber,
-      scopeExplanation: boq.remarks || "",
-    });
-
-    setInvoiceLines(allLines);
-    setInvoiceGstRate(0);
-    setInvoiceDate(new Date().toISOString().split("T")[0]);
-    setInvoiceDueDate("");
-    setInvoiceOrderDate(boq?.date ? new Date(boq.date).toISOString().split("T")[0] : "");
-    setInvoiceRefNumber(boq?.boqNumber || "");
-    setInvoiceRemarks(boq.remarks || "");
-    setInvoiceFreight(0);
-    setInvoiceRounding(0);
-    setPaidAmountInput(0);
-    setIsItemInvoiceModalOpen(true);
-  };
-
-  const handleCustomerSelect = (selectedId) => {
-    setInvoiceCustomerId(selectedId);
-
-    const matched = customers.find(
-      (c) => String(c._id) === String(selectedId)
-    );
-
-    if (matched) {
-      setInvoiceCustomerName(matched.customerName || matched.name || "");
-      setInvoiceCustomerCode(matched.customerCode || matched.code || "—");
-      setInvoiceContactPerson(matched.contactPersonName || matched.contactPerson || "—");
-    } else {
-      setInvoiceCustomerName("");
-      setInvoiceCustomerCode("");
-      setInvoiceContactPerson("");
-    }
-  };
-
-  // ─── Toggle Line Selection & Auto-Toggle Underneath Lines ───────────
-  const toggleLine = (lineId) => {
-    setInvoiceLines((prev) => {
-      const target = prev.find((l) => l._id === lineId);
-      if (!target) return prev;
-
-      const newSelected = !target.selected;
-
-      // If a header row is clicked, select/deselect all subsequent lines belonging to it
-      if (target.isHeader) {
-        const targetPrefix = target.srNo.trim();
-        return prev.map((l) => {
-          if (l._id === lineId) return { ...l, selected: newSelected };
-          if (l.srNo && l.srNo.startsWith(targetPrefix + ".")) {
-            return { ...l, selected: newSelected };
-          }
-          return l;
-        });
-      }
-
-      return prev.map((l) => (l._id === lineId ? { ...l, selected: newSelected } : l));
-    });
-  };
-
-  const handleSingleQtyChange = (lineId, val) => {
-    const newQty = parseFloat(val) || 0;
-    setInvoiceLines((prev) =>
-      prev.map((l) => (l._id === lineId ? { ...l, quantity: newQty } : l))
-    );
-  };
-
-  const handleLineQtyChange = (lineId, field, val) => {
-    setSelectedInvoiceItem((prev) => ({
-      ...prev,
-      lines: prev.lines.map((ln) =>
-        ln._id === lineId ? { ...ln, [field]: parseFloat(val) || 0 } : ln
-      ),
-    }));
-  };
-
-  const toggleLineSelection = (lineId) => {
-    setSelectedInvoiceItem((prev) => ({
-      ...prev,
-      lines: prev.lines.map((ln) =>
-        ln._id === lineId ? { ...ln, selected: !ln.selected } : ln
-      ),
-    }));
-  };
-
-  //SALES INVOICE GENERATION SECTION
-
-  const handleConfirmSalesInvoice = async (e) => {
-    e.preventDefault();
-
-    const activeLines = invoiceLines.filter((l) => l.selected && !l.isHeader);
-    if (activeLines.length === 0) {
-      toast.error("Please select at least one billable item row.");
-      return;
-    }
-
-    const defaultWarehouse = selectedWarehouseId || warehouses[0]?._id || null;
-    const defaultWarehouseName =
-      warehouses.find((w) => w._id === defaultWarehouse)?.warehouseName || "Main Warehouse";
-
-    const formattedItems = [];
-    activeLines.forEach((line) => {
-      const qty = parseFloat(line.quantity) || 0;
-      if (qty <= 0) return;
-
-      // 1. Supply Line
-      if (line.unitRateSupply > 0) {
-        const supplyAmt = qty * line.unitRateSupply;
-        const supplyGst = (supplyAmt * (Number(invoiceGstRate) || 0)) / 100;
-
-        formattedItems.push({
-          item: line.itemId || null,
-          itemCode: line.srNo || "ITEM",
-          itemName: `${line.description} (Supply)`,
-          quantity: qty,
-          unitPrice: line.unitRateSupply,
-          discount: 0,
-          amount: supplyAmt,
-          totalAmount: supplyAmt, // 👈 Required by SalesInvoiceView
-          taxOption: "GST",
-          gstRate: Number(invoiceGstRate) || 0, // 👈 Required by SalesInvoiceView
-          cgstAmount: supplyGst / 2, // 👈 Required by SalesInvoiceView
-          sgstAmount: supplyGst / 2, // 👈 Required by SalesInvoiceView
-          taxAmount: supplyGst,
-          warehouse: defaultWarehouse,
-          warehouseName: defaultWarehouseName,
-        });
-      }
-
-      // 2. Installation Line
-      if (line.unitRateInstallation > 0) {
-        const installAmt = qty * line.unitRateInstallation;
-        const installGst = (installAmt * (Number(invoiceGstRate) || 0)) / 100;
-
-        formattedItems.push({
-          item: line.itemId || null,
-          itemCode: line.srNo || "ITEM",
-          itemName: `${line.description} (Installation)`,
-          quantity: qty,
-          unitPrice: line.unitRateInstallation,
-          discount: 0,
-          amount: installAmt,
-          totalAmount: installAmt, // 👈 Required by SalesInvoiceView
-          taxOption: "GST",
-          gstRate: Number(invoiceGstRate) || 0, // 👈 Required by SalesInvoiceView
-          cgstAmount: installGst / 2, // 👈 Required by SalesInvoiceView
-          sgstAmount: installGst / 2, // 👈 Required by SalesInvoiceView
-          taxAmount: installGst,
-          warehouse: defaultWarehouse,
-          warehouseName: defaultWarehouseName,
-        });
-      }
-    });
-
-    if (formattedItems.length === 0) {
-      toast.error("All selected items have 0 billable quantities or rates.");
-      return;
-    }
-
-    const subTotal = formattedItems.reduce((acc, it) => acc + it.totalAmount, 0);
-    const gstTotal = (subTotal * (Number(invoiceGstRate) || 0)) / 100;
-    const freight = parseFloat(invoiceFreight) || 0;
-    const rounding = parseFloat(invoiceRounding) || 0;
-    const grandTotal = subTotal + gstTotal + freight + rounding;
-    const initialPaid = Math.min(parseFloat(paidAmountInput) || 0, grandTotal);
-    const openBalance = Math.max(0, grandTotal - initialPaid);
-
-    // ── Exact Schema Keys Required by SalesInvoiceView ──
-    const invoicePayload = {
-      sourceModel: "delivery",
-      sourceId: boq._id,
-      customer: invoiceCustomerId || null,
-      customerName: invoiceCustomerName || "Customer",
-      customerCode: invoiceCustomerCode || "—", // 👈 Required by SalesInvoiceView
-      contactPerson: invoiceContactPerson || "—", // 👈 Required by SalesInvoiceView
-      invoiceDate: invoiceDate || new Date().toISOString().split("T")[0],
-      dueDate: invoiceDueDate || null,
-      orderDate: invoiceOrderDate || null,
-      refNumber: invoiceRefNumber || boq.boqNumber || "",
-      remarks: invoiceRemarks || "",
-      items: formattedItems,
-      totalBeforeDiscount: subTotal, // 👈 Required by SalesInvoiceView
-      subTotal,
-      gstTotal, // 👈 Required by SalesInvoiceView
-      taxTotal: gstTotal,
-      freight,
-      rounding,
-      grandTotal,
-      paidAmount: initialPaid,
-      remainingAmount: openBalance,
-      openBalance, // 👈 Required by SalesInvoiceView
-      totalDownPayment: 0,
-      paymentMethod,
-      paymentStatus: initialPaid === 0 ? "Pending" : initialPaid >= grandTotal ? "Paid" : "Partial",
-      payments: initialPaid > 0 ? [{
-        amount: initialPaid,
-        method: paymentMethod,
-        paymentDate: invoiceDate || new Date(),
-        notes: "Payment recorded at invoice creation",
-      }] : [],
-      status: "Open",
-    };
-
-    setGeneratingInvoice(true);
-    try {
-      const token = localStorage.getItem("token");
-      const formData = new FormData();
-      formData.append("invoiceData", JSON.stringify(invoicePayload));
-
-      invoiceAttachments.forEach((file) => {
-        formData.append("attachments", file);
-      });
-
-      const res = await api.post("/sales-invoice", formData, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "multipart/form-data",
-        },
-      });
-
-      if (res.data?.success) {
-        toast.success(`Invoice ${res.data.data?.invoiceNumber || ""} created successfully!`);
-        setIsItemInvoiceModalOpen(false);
-        setInvoiceAttachments([]);
-      }
-    } catch (err) {
-      console.error("Sales invoice creation failed:", err);
-      toast.error(err.response?.data?.error || err.message || "Failed to create invoice");
-    } finally {
-      setGeneratingInvoice(false);
-    }
-  };
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-10">
       <div className="max-w-7xl mx-auto">
@@ -2446,13 +2474,13 @@ export default function BOQDetailsPage() {
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={openFullBoqInvoiceModal}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-sm hover:bg-emerald-700 shadow-lg shadow-emerald-100 transition-all"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-sm hover:bg-emerald-700 shadow-lg shadow-emerald-100 transition-all cursor-pointer"
             >
               <FaFileInvoice size={12} /> Generate Invoice
             </button>
             <button
               onClick={() => openWoModal("All")}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all cursor-pointer"
             >
               <FaFileContract size={12} /> Create Work Order (All)
             </button>
@@ -2495,9 +2523,7 @@ export default function BOQDetailsPage() {
                       </span>
                     )}
                     <h3 className="text-sm font-bold text-gray-800">{sectionName}</h3>
-                    <span className="text-xs text-gray-400">
-                      ({totalDescLines} Lines)
-                    </span>
+                    <span className="text-xs text-gray-400">({totalDescLines} Lines)</span>
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="text-sm font-black text-indigo-900 font-mono">
@@ -2509,7 +2535,7 @@ export default function BOQDetailsPage() {
                         e.stopPropagation();
                         openWoModal(sectionName);
                       }}
-                      className="flex items-center gap-1 px-3 py-1 rounded-lg bg-indigo-600 text-white text-[10px] font-bold hover:bg-indigo-700 transition-colors"
+                      className="flex items-center gap-1 px-3 py-1 rounded-lg bg-indigo-600 text-white text-[10px] font-bold hover:bg-indigo-700 transition-colors cursor-pointer"
                     >
                       <FaFileContract size={10} /> WO
                     </button>
@@ -2519,7 +2545,7 @@ export default function BOQDetailsPage() {
                         e.stopPropagation();
                         openAddItemsModal(sectionName);
                       }}
-                      className="flex items-center gap-1 px-3 py-1 rounded-lg bg-blue-600 text-white text-[10px] font-bold hover:bg-blue-700 transition-colors"
+                      className="flex items-center gap-1 px-3 py-1 rounded-lg bg-blue-600 text-white text-[10px] font-bold hover:bg-blue-700 transition-colors cursor-pointer"
                     >
                       <FaPlus size={10} /> Add Materials
                     </button>
@@ -2527,7 +2553,6 @@ export default function BOQDetailsPage() {
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        // Open modal using first parent item in section
                         openItemInvoiceModal(parentItemsInSection[0], sectionName);
                       }}
                       className="flex items-center gap-1 px-3 py-1 rounded-lg bg-emerald-600 text-white text-[10px] font-bold hover:bg-emerald-700 transition-colors shadow-sm cursor-pointer"
@@ -2579,13 +2604,11 @@ export default function BOQDetailsPage() {
 
                               <tbody className="divide-y divide-gray-100">
                                 {parentItems.map((parent) => {
-                                  // Suppress duplicate row if parent name is already the Section Accordion title
                                   const isRedundantParentRow =
                                     normalize(parent.itemName) === normalize(sectionName);
 
                                   return (
                                     <Fragment key={parent._id || parent.itemSerialNo}>
-                                      {/* Only show distinct Parent row if it does not repeat the Section Header */}
                                       {!isRedundantParentRow && (
                                         <tr className="bg-indigo-50/80 border-t-2 border-indigo-200">
                                           <td className="px-3 py-1.5 text-center font-black text-xs text-indigo-950 font-mono">
@@ -2602,7 +2625,6 @@ export default function BOQDetailsPage() {
                                         </tr>
                                       )}
 
-                                      {/* Technical Specification Clause */}
                                       {parent.sectionSpecification && (
                                         <tr className="bg-amber-50/60 border-t border-amber-200/50">
                                           <td className="px-3 py-1.5 text-center text-[10px] font-bold text-amber-700 uppercase">
@@ -2620,26 +2642,18 @@ export default function BOQDetailsPage() {
                                         </tr>
                                       )}
 
-                                      {/* Description Lines */}
                                       {(parent.descriptions || []).map((line) => {
-                                        const isZeroQty =
-                                          !line.quantity || Number(line.quantity) === 0;
-                                        const isZeroSupply =
-                                          !line.unitRateSupply ||
-                                          Number(line.unitRateSupply) === 0;
-                                        const isZeroInstall =
-                                          !line.unitRateInstallation ||
-                                          Number(line.unitRateInstallation) === 0;
-                                        const isZeroAmount =
-                                          !line.amount && !line.totalAmount;
+                                        const isZeroQty = !line.quantity || Number(line.quantity) === 0;
+                                        const isZeroSupply = !line.unitRateSupply || Number(line.unitRateSupply) === 0;
+                                        const isZeroInstall = !line.unitRateInstallation || Number(line.unitRateInstallation) === 0;
+                                        const isZeroAmount = !line.amount && !line.totalAmount;
 
                                         const lineAmount =
                                           line.totalAmount ||
                                           line.amount ||
                                           (line.amountSupply || 0) + (line.amountInstallation || 0);
 
-                                        const hasBOM =
-                                          Array.isArray(line.materials) && line.materials.length > 0;
+                                        const hasBOM = Array.isArray(line.materials) && line.materials.length > 0;
                                         const isBOMOpen = !!expandedBOMRows[line._id];
 
                                         return (
@@ -2660,7 +2674,7 @@ export default function BOQDetailsPage() {
                                                     <button
                                                       type="button"
                                                       onClick={() => toggleBOMRow(line._id)}
-                                                      className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-100 px-1.5 py-0.5 rounded shrink-0 transition-colors"
+                                                      className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-100 px-1.5 py-0.5 rounded shrink-0 transition-colors cursor-pointer"
                                                     >
                                                       <FaBoxes size={10} />
                                                       {line.materials.length} BOM
@@ -2674,11 +2688,7 @@ export default function BOQDetailsPage() {
                                                   : line.unit || "nos"}
                                               </td>
                                               <td className="px-2 py-1.5 text-center text-[11px] font-semibold text-gray-800 align-top">
-                                                {line.isRateOnly
-                                                  ? "—"
-                                                  : isZeroQty
-                                                    ? "—"
-                                                    : line.quantity}
+                                                {line.isRateOnly ? "—" : isZeroQty ? "—" : line.quantity}
                                               </td>
                                               <td className="px-2 py-1.5 text-right text-[11px] text-gray-600 font-mono align-top">
                                                 {isZeroSupply ? "—" : line.unitRateSupply}
@@ -2709,7 +2719,6 @@ export default function BOQDetailsPage() {
                                               </td>
                                             </tr>
 
-                                            {/* Nested Raw Materials BOM Drawer */}
                                             {isBOMOpen && hasBOM && (
                                               <tr className="bg-slate-50/80 border-y border-gray-200">
                                                 <td colSpan={9} className="px-6 py-2.5">
@@ -2780,63 +2789,36 @@ export default function BOQDetailsPage() {
                           <table className="w-full text-xs border-collapse">
                             <thead className="bg-gray-50">
                               <tr>
-                                <th className="px-2 py-1 text-left text-[9px] font-bold uppercase text-gray-400">
-                                  WO #
-                                </th>
-                                <th className="px-2 py-1 text-left text-[9px] font-bold uppercase text-gray-400">
-                                  Type
-                                </th>
-                                <th className="px-2 py-1 text-left text-[9px] font-bold uppercase text-gray-400">
-                                  Contractor / Customer
-                                </th>
-                                <th className="px-2 py-1 text-center text-[9px] font-bold uppercase text-gray-400">
-                                  Status
-                                </th>
-                                <th className="px-2 py-1 text-right text-[9px] font-bold uppercase text-gray-400">
-                                  Amount
-                                </th>
-                                <th className="px-2 py-1 text-right text-[9px] font-bold uppercase text-gray-400">
-                                  Actions
-                                </th>
+                                <th className="px-2 py-1 text-left text-[9px] font-bold uppercase text-gray-400">WO #</th>
+                                <th className="px-2 py-1 text-left text-[9px] font-bold uppercase text-gray-400">Type</th>
+                                <th className="px-2 py-1 text-left text-[9px] font-bold uppercase text-gray-400">Contractor / Customer</th>
+                                <th className="px-2 py-1 text-center text-[9px] font-bold uppercase text-gray-400">Status</th>
+                                <th className="px-2 py-1 text-right text-[9px] font-bold uppercase text-gray-400">Amount</th>
+                                <th className="px-2 py-1 text-right text-[9px] font-bold uppercase text-gray-400">Actions</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
                               {woList.map((wo) => (
                                 <tr key={wo._id} className="hover:bg-indigo-50/20">
-                                  <td className="px-2 py-1 font-medium text-indigo-600">
-                                    {wo.workOrderNumber}
-                                  </td>
-                                  <td className="px-2 py-1 text-xs font-medium text-gray-500 capitalize">
-                                    {wo.orderType || "contractor"}
-                                  </td>
+                                  <td className="px-2 py-1 font-medium text-indigo-600">{wo.workOrderNumber}</td>
+                                  <td className="px-2 py-1 text-xs font-medium text-gray-500 capitalize">{wo.orderType || "contractor"}</td>
                                   <td className="px-2 py-1 text-gray-600">
                                     {wo.orderType === "customer"
-                                      ? wo.customer?.customerName ||
-                                      wo.customer?.name ||
-                                      "—"
-                                      : wo.contractor?.supplierName ||
-                                      wo.contractor?.name ||
-                                      "—"}
+                                      ? wo.customer?.customerName || wo.customer?.name || "—"
+                                      : wo.contractor?.supplierName || wo.contractor?.name || "—"}
                                   </td>
                                   <td className="px-2 py-1 text-center">
                                     <StatusBadge status={wo.status} />
                                   </td>
                                   <td className="px-2 py-1 text-right font-bold">
                                     {formatCurrency(
-                                      (wo.items || []).reduce(
-                                        (s, i) => s + (i.amount || 0),
-                                        0
-                                      )
+                                      (wo.items || []).reduce((s, i) => s + (i.amount || 0), 0)
                                     )}
                                   </td>
                                   <td className="px-2 py-1 text-right">
                                     <button
-                                      onClick={() =>
-                                        router.push(
-                                          `/admin/construction/work-orders/${wo._id}`
-                                        )
-                                      }
-                                      className="text-gray-400 hover:text-indigo-600"
+                                      onClick={() => router.push(`/admin/construction/work-orders/${wo._id}`)}
+                                      className="text-gray-400 hover:text-indigo-600 cursor-pointer"
                                     >
                                       <HiDotsVertical size={14} />
                                     </button>
@@ -2864,7 +2846,7 @@ export default function BOQDetailsPage() {
               </h2>
               <button
                 onClick={() => openAddItemsModal("")}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 shadow-lg shadow-blue-100 transition-all"
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 shadow-lg shadow-blue-100 transition-all cursor-pointer"
               >
                 <FaPlus size={12} /> Add Materials
               </button>
@@ -2889,9 +2871,7 @@ export default function BOQDetailsPage() {
                         {isExpanded ? <FaChevronUp size={14} /> : <FaChevronDown size={14} />}
                       </button>
                       <h3 className="text-sm font-bold text-gray-800">{sectionName}</h3>
-                      <span className="text-xs text-gray-400">
-                        ({allMaterials.length} materials)
-                      </span>
+                      <span className="text-xs text-gray-400">({allMaterials.length} materials)</span>
                     </div>
                     <button
                       type="button"
@@ -2899,7 +2879,7 @@ export default function BOQDetailsPage() {
                         e.stopPropagation();
                         openAddItemsModal(sectionName);
                       }}
-                      className="flex items-center gap-1 px-3 py-1 rounded-lg bg-blue-600 text-white text-[10px] font-bold hover:bg-blue-700 transition-colors"
+                      className="flex items-center gap-1 px-3 py-1 rounded-lg bg-blue-600 text-white text-[10px] font-bold hover:bg-blue-700 transition-colors cursor-pointer"
                     >
                       <FaPlus size={10} /> Add
                     </button>
@@ -2918,65 +2898,37 @@ export default function BOQDetailsPage() {
                               <span className="text-xs font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded">
                                 {subSectionName}
                               </span>
-                              <span className="text-[10px] text-gray-400">
-                                ({materials.length} materials)
-                              </span>
+                              <span className="text-[10px] text-gray-400">({materials.length} materials)</span>
                             </div>
                             <div className="overflow-x-auto">
                               <table className="w-full text-sm border-collapse">
                                 <thead className="bg-gray-50">
                                   <tr>
-                                    <th className="px-3 py-2 text-left text-[10px] font-bold uppercase text-gray-400">
-                                      Material
-                                    </th>
-                                    <th className="px-3 py-2 text-left text-[10px] font-bold uppercase text-gray-400">
-                                      Unit
-                                    </th>
-                                    <th className="px-3 py-2 text-center text-[10px] font-bold uppercase text-gray-400">
-                                      Qty
-                                    </th>
-                                    <th className="px-3 py-2 text-center text-[10px] font-bold uppercase text-gray-400">
-                                      Rate
-                                    </th>
-                                    <th className="px-3 py-2 text-right text-[10px] font-bold uppercase text-gray-400">
-                                      Amount
-                                    </th>
+                                    <th className="px-3 py-2 text-left text-[10px] font-bold uppercase text-gray-400">Material</th>
+                                    <th className="px-3 py-2 text-left text-[10px] font-bold uppercase text-gray-400">Unit</th>
+                                    <th className="px-3 py-2 text-center text-[10px] font-bold uppercase text-gray-400">Qty</th>
+                                    <th className="px-3 py-2 text-center text-[10px] font-bold uppercase text-gray-400">Rate</th>
+                                    <th className="px-3 py-2 text-right text-[10px] font-bold uppercase text-gray-400">Amount</th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
                                   {materials.map((mat) => (
                                     <tr key={mat._id} className="hover:bg-blue-50/20">
-                                      <td className="px-3 py-2 text-xs text-gray-700">
-                                        {mat.itemName}
-                                      </td>
-                                      <td className="px-3 py-2 text-xs text-gray-600">
-                                        {mat.unit}
-                                      </td>
-                                      <td className="px-3 py-2 text-center text-xs text-gray-700">
-                                        {mat.quantity}
-                                      </td>
-                                      <td className="px-3 py-2 text-center text-xs text-gray-700">
-                                        {mat.rate}
-                                      </td>
+                                      <td className="px-3 py-2 text-xs text-gray-700">{mat.itemName}</td>
+                                      <td className="px-3 py-2 text-xs text-gray-600">{mat.unit}</td>
+                                      <td className="px-3 py-2 text-center text-xs text-gray-700">{mat.quantity}</td>
+                                      <td className="px-3 py-2 text-center text-xs text-gray-700">{mat.rate}</td>
                                       <td className="px-3 py-2 text-right text-xs font-bold text-gray-800">
                                         {formatCurrency(mat.amount)}
                                       </td>
                                     </tr>
                                   ))}
                                   <tr className="bg-blue-50/30">
-                                    <td
-                                      colSpan="4"
-                                      className="px-3 py-2 text-right text-xs font-bold text-blue-600"
-                                    >
+                                    <td colSpan="4" className="px-3 py-2 text-right text-xs font-bold text-blue-600">
                                       Sub‑Section Total
                                     </td>
                                     <td className="px-3 py-2 text-right text-xs font-bold text-blue-700">
-                                      {formatCurrency(
-                                        materials.reduce(
-                                          (sum, m) => sum + (m.amount || 0),
-                                          0
-                                        )
-                                      )}
+                                      {formatCurrency(materials.reduce((sum, m) => sum + (m.amount || 0), 0))}
                                     </td>
                                   </tr>
                                 </tbody>
@@ -2990,9 +2942,7 @@ export default function BOQDetailsPage() {
                           Section Total ({allMaterials.length} materials)
                         </span>
                         <span className="text-sm font-extrabold text-blue-700">
-                          {formatCurrency(
-                            allMaterials.reduce((sum, m) => sum + (m.amount || 0), 0)
-                          )}
+                          {formatCurrency(allMaterials.reduce((sum, m) => sum + (m.amount || 0), 0))}
                         </span>
                       </div>
                     </div>
@@ -3010,7 +2960,7 @@ export default function BOQDetailsPage() {
             <p className="text-gray-400 text-sm font-medium">No additional materials added yet.</p>
             <button
               onClick={() => openAddItemsModal("")}
-              className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 transition-colors"
+              className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 transition-colors cursor-pointer"
             >
               <FaPlus size={12} /> Add Materials
             </button>
@@ -3152,33 +3102,15 @@ export default function BOQDetailsPage() {
                     <table className="w-full text-sm divide-y divide-gray-100">
                       <thead className="bg-gray-50">
                         <tr>
-                          <th className="px-3 py-2 text-left text-[10px] font-bold uppercase text-gray-400 min-w-[120px]">
-                            Section
-                          </th>
-                          <th className="px-3 py-2 text-left text-[10px] font-bold uppercase text-gray-400 min-w-[100px]">
-                            Sub‑Section
-                          </th>
-                          <th className="px-3 py-2 text-left text-[10px] font-bold uppercase text-gray-400 min-w-[150px]">
-                            Item Name
-                          </th>
-                          <th className="px-3 py-2 text-left text-[10px] font-bold uppercase text-gray-400 min-w-[60px]">
-                            Type
-                          </th>
-                          <th className="px-3 py-2 text-left text-[10px] font-bold uppercase text-gray-400 min-w-[150px]">
-                            Description
-                          </th>
-                          <th className="px-3 py-2 text-center text-[10px] font-bold uppercase text-gray-400">
-                            Unit
-                          </th>
-                          <th className="px-3 py-2 text-center text-[10px] font-bold uppercase text-gray-400">
-                            Qty
-                          </th>
-                          <th className="px-3 py-2 text-center text-[10px] font-bold uppercase text-gray-400">
-                            Rate
-                          </th>
-                          <th className="px-3 py-2 text-right text-[10px] font-bold uppercase text-gray-400">
-                            Amount
-                          </th>
+                          <th className="px-3 py-2 text-left text-[10px] font-bold uppercase text-gray-400 min-w-[120px]">Section</th>
+                          <th className="px-3 py-2 text-left text-[10px] font-bold uppercase text-gray-400 min-w-[100px]">Sub‑Section</th>
+                          <th className="px-3 py-2 text-left text-[10px] font-bold uppercase text-gray-400 min-w-[150px]">Item Name</th>
+                          <th className="px-3 py-2 text-left text-[10px] font-bold uppercase text-gray-400 min-w-[60px]">Type</th>
+                          <th className="px-3 py-2 text-left text-[10px] font-bold uppercase text-gray-400 min-w-[150px]">Description</th>
+                          <th className="px-3 py-2 text-center text-[10px] font-bold uppercase text-gray-400">Unit</th>
+                          <th className="px-3 py-2 text-center text-[10px] font-bold uppercase text-gray-400">Qty</th>
+                          <th className="px-3 py-2 text-center text-[10px] font-bold uppercase text-gray-400">Rate</th>
+                          <th className="px-3 py-2 text-right text-[10px] font-bold uppercase text-gray-400">Amount</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100 bg-white">
@@ -3194,9 +3126,7 @@ export default function BOQDetailsPage() {
                                 <span className="text-indigo-600">BOQ</span>
                               )}
                             </td>
-                            <td className="px-3 py-2 text-xs text-gray-700">
-                              {item.description}
-                            </td>
+                            <td className="px-3 py-2 text-xs text-gray-700">{item.description}</td>
                             <td className="px-3 py-2 text-center text-xs">{item.unit}</td>
                             <td className="px-3 py-2 text-center text-xs">{item.quantity}</td>
                             <td className="px-3 py-2 text-center text-xs">{item.rate}</td>
@@ -3215,14 +3145,14 @@ export default function BOQDetailsPage() {
                 <button
                   type="button"
                   onClick={() => setIsWoModalOpen(false)}
-                  className="text-sm font-bold text-gray-400 hover:text-gray-600 uppercase tracking-widest"
+                  className="text-sm font-bold text-gray-400 hover:text-gray-600 uppercase tracking-widest cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={generatingWo || woItems.length === 0}
-                  className="flex items-center gap-2 px-6 py-2 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all disabled:opacity-50"
+                  className="flex items-center gap-2 px-6 py-2 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 shadow-lg shadow-indigo-100 transition-all disabled:opacity-50 cursor-pointer"
                 >
                   {generatingWo ? (
                     <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -3266,9 +3196,7 @@ export default function BOQDetailsPage() {
                 <Lbl text="Sub‑Section" />
                 <Select
                   options={subSectionChoices}
-                  value={
-                    subSectionChoices.find((opt) => opt.value === addItemsSubSection) || null
-                  }
+                  value={subSectionChoices.find((opt) => opt.value === addItemsSubSection) || null}
                   onChange={(opt) => setAddItemsSubSection(opt?.value || "Main")}
                   placeholder="Select sub‑section..."
                   className="text-sm"
@@ -3319,7 +3247,7 @@ export default function BOQDetailsPage() {
                         },
                       ]);
                     }}
-                    className="flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors"
+                    className="flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors cursor-pointer"
                   >
                     <FaPlus size={10} /> Add Row
                   </button>
@@ -3329,24 +3257,12 @@ export default function BOQDetailsPage() {
                     <table className="w-full text-sm divide-y divide-gray-100">
                       <thead className="bg-gray-50">
                         <tr>
-                          <th className="px-3 py-2 text-left text-[10px] font-bold uppercase text-gray-400 min-w-[180px]">
-                            Material (Item Name)
-                          </th>
-                          <th className="px-3 py-2 text-left text-[10px] font-bold uppercase text-gray-400 min-w-[80px]">
-                            Unit
-                          </th>
-                          <th className="px-3 py-2 text-center text-[10px] font-bold uppercase text-gray-400">
-                            Qty
-                          </th>
-                          <th className="px-3 py-2 text-center text-[10px] font-bold uppercase text-gray-400">
-                            Rate
-                          </th>
-                          <th className="px-3 py-2 text-right text-[10px] font-bold uppercase text-gray-400">
-                            Amount
-                          </th>
-                          <th className="px-3 py-2 text-center text-[10px] font-bold uppercase text-gray-400">
-                            #
-                          </th>
+                          <th className="px-3 py-2 text-left text-[10px] font-bold uppercase text-gray-400 min-w-[180px]">Material (Item Name)</th>
+                          <th className="px-3 py-2 text-left text-[10px] font-bold uppercase text-gray-400 min-w-[80px]">Unit</th>
+                          <th className="px-3 py-2 text-center text-[10px] font-bold uppercase text-gray-400">Qty</th>
+                          <th className="px-3 py-2 text-center text-[10px] font-bold uppercase text-gray-400">Rate</th>
+                          <th className="px-3 py-2 text-right text-[10px] font-bold uppercase text-gray-400">Amount</th>
+                          <th className="px-3 py-2 text-center text-[10px] font-bold uppercase text-gray-400">#</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100 bg-white">
@@ -3357,31 +3273,14 @@ export default function BOQDetailsPage() {
                                 options={itemOptions}
                                 value={
                                   itemOptions.find(
-                                    (opt) =>
-                                      normalize(opt.itemName) === normalize(row.itemName)
+                                    (opt) => normalize(opt.itemName) === normalize(row.itemName)
                                   ) || null
                                 }
                                 onChange={(selected) => {
-                                  handleAddItemsRowChange(
-                                    row._id,
-                                    "itemName",
-                                    selected?.itemName || ""
-                                  );
-                                  handleAddItemsRowChange(
-                                    row._id,
-                                    "itemId",
-                                    selected?.value || null
-                                  );
-                                  handleAddItemsRowChange(
-                                    row._id,
-                                    "unit",
-                                    selected?.unit || "nos"
-                                  );
-                                  handleAddItemsRowChange(
-                                    row._id,
-                                    "description",
-                                    selected?.description || ""
-                                  );
+                                  handleAddItemsRowChange(row._id, "itemName", selected?.itemName || "");
+                                  handleAddItemsRowChange(row._id, "itemId", selected?.value || null);
+                                  handleAddItemsRowChange(row._id, "unit", selected?.unit || "nos");
+                                  handleAddItemsRowChange(row._id, "description", selected?.description || "");
                                 }}
                                 placeholder="Search or select Item Name..."
                                 isSearchable
@@ -3394,9 +3293,7 @@ export default function BOQDetailsPage() {
                                 type="text"
                                 className="w-full px-2 py-1 border border-gray-200 rounded text-xs bg-gray-50 focus:border-blue-300 outline-none"
                                 value={row.unit}
-                                onChange={(e) =>
-                                  handleAddItemsRowChange(row._id, "unit", e.target.value)
-                                }
+                                onChange={(e) => handleAddItemsRowChange(row._id, "unit", e.target.value)}
                               />
                             </td>
                             <td className="px-3 py-2">
@@ -3405,9 +3302,7 @@ export default function BOQDetailsPage() {
                                 step="any"
                                 className="w-16 px-2 py-1 border border-gray-200 rounded text-xs bg-gray-50 focus:border-blue-300 outline-none text-center"
                                 value={row.quantity}
-                                onChange={(e) =>
-                                  handleAddItemsRowChange(row._id, "quantity", e.target.value)
-                                }
+                                onChange={(e) => handleAddItemsRowChange(row._id, "quantity", e.target.value)}
                                 min="0"
                               />
                             </td>
@@ -3417,32 +3312,23 @@ export default function BOQDetailsPage() {
                                 step="any"
                                 className="w-16 px-2 py-1 border border-gray-200 rounded text-xs bg-gray-50 focus:border-blue-300 outline-none text-center"
                                 value={row.rate}
-                                onChange={(e) =>
-                                  handleAddItemsRowChange(row._id, "rate", e.target.value)
-                                }
+                                onChange={(e) => handleAddItemsRowChange(row._id, "rate", e.target.value)}
                                 min="0"
                               />
                             </td>
                             <td className="px-3 py-2 text-right font-bold text-gray-700">
-                              {formatCurrency(
-                                (parseFloat(row.quantity) || 0) * (parseFloat(row.rate) || 0)
-                              )}
+                              {formatCurrency((parseFloat(row.quantity) || 0) * (parseFloat(row.rate) || 0))}
                             </td>
                             <td className="px-3 py-2 text-center">
                               <button
                                 type="button"
                                 onClick={() => {
-                                  setAddItemsRows((prev) =>
-                                    prev.filter((r) => r._id !== row._id)
-                                  );
+                                  setAddItemsRows((prev) => prev.filter((r) => r._id !== row._id));
                                   setAddItemsSelected((prev) =>
-                                    prev.filter(
-                                      (opt) =>
-                                        normalize(opt.itemName) !== normalize(row.itemName)
-                                    )
+                                    prev.filter((opt) => normalize(opt.itemName) !== normalize(row.itemName))
                                   );
                                 }}
-                                className="text-gray-300 hover:text-red-500 transition-colors"
+                                className="text-gray-300 hover:text-red-500 transition-colors cursor-pointer"
                               >
                                 <FaTrash size={12} />
                               </button>
@@ -3465,14 +3351,14 @@ export default function BOQDetailsPage() {
                     setIsAddItemsModalOpen(false);
                     setSearchTerm("");
                   }}
-                  className="text-sm font-bold text-gray-400 hover:text-gray-600 uppercase tracking-widest"
+                  className="text-sm font-bold text-gray-400 hover:text-gray-600 uppercase tracking-widest cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={addItemsRows.length === 0}
-                  className="flex items-center gap-2 px-6 py-2 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 shadow-lg shadow-blue-100 transition-all disabled:opacity-50"
+                  className="flex items-center gap-2 px-6 py-2 rounded-xl bg-blue-600 text-white font-bold text-sm hover:bg-blue-700 shadow-lg shadow-blue-100 transition-all disabled:opacity-50 cursor-pointer"
                 >
                   <FaCheck size={12} /> Add {addItemsRows.length} Materials
                 </button>
@@ -3481,7 +3367,8 @@ export default function BOQDetailsPage() {
           </div>
         </div>
       )}
-      {/* ─── SALES INVOICE GENERATOR MODAL ───────────────────────────────── */}
+
+      {/* ─── INVOICE GENERATOR MODAL ─────────────────────────────────────── */}
       {isItemInvoiceModalOpen && (() => {
         const activeBillable = invoiceLines.filter((l) => l.selected && !l.isHeader);
         const amtSupplyTotal = activeBillable.reduce(
@@ -3494,12 +3381,15 @@ export default function BOQDetailsPage() {
         );
         const taxableSubtotal = amtSupplyTotal + amtInstallTotal;
         const currentGst = (taxableSubtotal * (Number(invoiceGstRate) || 0)) / 100;
-        const grandTotal = taxableSubtotal + currentGst + (parseFloat(invoiceFreight) || 0) + (parseFloat(invoiceRounding) || 0);
+        const grandTotal =
+          taxableSubtotal +
+          currentGst +
+          (parseFloat(invoiceFreight) || 0) +
+          (parseFloat(invoiceRounding) || 0);
 
         return (
           <div className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[94vh]">
-
               {/* Header */}
               <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between shrink-0 bg-slate-50">
                 <div className="flex items-center gap-3">
@@ -3508,7 +3398,9 @@ export default function BOQDetailsPage() {
                   </span>
                   <div>
                     <h2 className="text-sm font-black text-gray-900">
-                      {invoiceMode === "full_boq" ? "Generate Full BOQ Invoice" : "Generate Item Sales Invoice"}
+                      {invoiceMode === "full_boq"
+                        ? `Generate Full BOQ ${invoiceTargetType === "sales" ? "Sales" : "Purchase"} Invoice`
+                        : `Generate Item ${invoiceTargetType === "sales" ? "Sales" : "Purchase"} Invoice`}
                     </h2>
                     <p className="text-[11px] text-gray-500 font-mono">
                       BOQ Ref: {boq?.boqNumber} · Mode: {invoiceMode.toUpperCase()}
@@ -3525,76 +3417,148 @@ export default function BOQDetailsPage() {
               </div>
 
               {/* Modal Form */}
-              <form onSubmit={handleConfirmSalesInvoice} className="p-6 space-y-4 overflow-y-auto flex-1 text-xs">
-
-                {/* Point 4: Customer Details Card matching Sales Invoice View */}
-                {/* Customer Details Card with Auto-Fill */}
-                <div className="p-4 rounded-2xl bg-white border border-gray-200 shadow-2xs space-y-3">
-                  <div className="flex items-center gap-2 text-indigo-600 font-bold text-xs">
-                    <FaUserTie /> Customer Details
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                    {/* Searchable / Selectable Customer Name */}
-                    <div>
-                      <Lbl text="Customer Name" req />
-                      <Select
-                        options={customerOptions}
-                        value={customerOptions.find((opt) => String(opt.value) === String(invoiceCustomerId)) || null}
-                        onChange={(opt) => handleCustomerSelect(opt ? opt.value : "")}
-                        placeholder="Select or search customer..."
-                        isClearable
-                        className="text-xs"
-                        styles={{
-                          control: (base) => ({
-                            ...base,
-                            borderRadius: "0.75rem",
-                            borderColor: "#e5e7eb",
-                            fontSize: "0.75rem",
-                            minHeight: "38px",
-                          }),
-                        }}
-                      />
-                    </div>
-
-                    {/* Auto-filled Customer Code */}
-                    <div>
-                      <Lbl text="Customer Code" />
-                      <input
-                        type="text"
-                        readOnly
-                        value={invoiceCustomerCode}
-                        placeholder="Auto-filled"
-                        className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-gray-50 text-xs font-mono font-bold text-indigo-900 outline-none"
-                      />
-                    </div>
-
-                    {/* Auto-filled Contact Person */}
-                    <div>
-                      <Lbl text="Contact Person" />
-                      <input
-                        type="text"
-                        readOnly
-                        value={invoiceContactPerson}
-                        placeholder="Auto-filled"
-                        className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-gray-50 text-xs text-gray-700 outline-none"
-                      />
-                    </div>
-
-                    {/* Reference Number */}
-                    <div>
-                      <Lbl text="Reference No." />
-                      <input
-                        type="text"
-                        value={invoiceRefNumber}
-                        onChange={(e) => setInvoiceRefNumber(e.target.value)}
-                        placeholder="PO or Ref Number..."
-                        className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white text-xs font-medium focus:border-indigo-500 outline-none"
-                      />
-                    </div>
+              <form onSubmit={handleConfirmInvoice} className="p-6 space-y-4 overflow-y-auto flex-1 text-xs">
+                {/* Invoice Destination Switcher */}
+                <div className="p-3 bg-slate-100 rounded-2xl flex items-center justify-between">
+                  <span className="font-extrabold text-gray-700 uppercase tracking-wider text-[11px]">
+                    Invoice Destination:
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setInvoiceTargetType("sales")}
+                      className={`px-4 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer ${invoiceTargetType === "sales"
+                        ? "bg-indigo-600 text-white shadow-md shadow-indigo-200"
+                        : "bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"
+                        }`}
+                    >
+                      Sales Invoice (Client)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInvoiceTargetType("purchase")}
+                      className={`px-4 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer ${invoiceTargetType === "purchase"
+                        ? "bg-amber-600 text-white shadow-md shadow-amber-200"
+                        : "bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"
+                        }`}
+                    >
+                      Purchase Invoice (Supplier / Contractor)
+                    </button>
                   </div>
                 </div>
 
-                {/* Invoice Dates & Point 2: Warehouse Loading Card */}
+                {/* Conditional Party Details: Shows ONLY Customer for Sales, ONLY Supplier for Purchase */}
+                {invoiceTargetType === "sales" ? (
+                  /* ── CUSTOMER CARD (Sales Only) ── */
+                  <div className="p-4 rounded-2xl bg-white border border-gray-200 shadow-2xs space-y-3">
+                    <div className="flex items-center gap-2 text-indigo-600 font-bold text-xs">
+                      <FaUserTie /> Customer Details
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                      <div>
+                        <Lbl text="Customer Name" req />
+                        <Select
+                          options={customerOptions}
+                          value={customerOptions.find((opt) => String(opt.value) === String(invoiceCustomerId)) || null}
+                          onChange={(opt) => handleCustomerSelect(opt ? opt.value : "")}
+                          placeholder="Search customer..."
+                          isClearable
+                          className="text-xs"
+                          styles={{
+                            control: (base) => ({
+                              ...base,
+                              borderRadius: "0.75rem",
+                              borderColor: "#e5e7eb",
+                              fontSize: "0.75rem",
+                              minHeight: "38px",
+                            }),
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <Lbl text="Customer Code" />
+                        <input
+                          type="text"
+                          readOnly
+                          value={invoiceCustomerCode}
+                          placeholder="Auto-filled"
+                          className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-gray-50 text-xs font-mono font-bold text-indigo-900 outline-none"
+                        />
+                      </div>
+                      <div>
+                        <Lbl text="Contact Person" />
+                        <input
+                          type="text"
+                          readOnly
+                          value={invoiceContactPerson}
+                          placeholder="Auto-filled"
+                          className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-gray-50 text-xs text-gray-700 outline-none"
+                        />
+                      </div>
+                      <div>
+                        <Lbl text="Reference No." />
+                        <input
+                          type="text"
+                          value={invoiceRefNumber}
+                          onChange={(e) => setInvoiceRefNumber(e.target.value)}
+                          placeholder="PO / Contract Ref..."
+                          className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white text-xs font-medium outline-none focus:border-indigo-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  /* ── SUPPLIER / CONTRACTOR CARD (Purchase Only) ── */
+                  <div className="p-4 rounded-2xl bg-white border border-amber-200 shadow-2xs space-y-3">
+                    <div className="flex items-center gap-2 text-amber-700 font-bold text-xs">
+                      <FaUserTie /> Supplier / Contractor Details
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div>
+                        <Lbl text="Supplier / Contractor Name" req />
+                        <Select
+                          options={supplierOptions}
+                          value={supplierOptions.find((opt) => String(opt.value) === String(invoiceSupplierId)) || null}
+                          onChange={(opt) => handleSupplierSelect(opt ? opt.value : "")}
+                          placeholder="Search contractor / supplier..."
+                          isClearable
+                          className="text-xs"
+                          styles={{
+                            control: (base) => ({
+                              ...base,
+                              borderRadius: "0.75rem",
+                              borderColor: "#fed7aa",
+                              fontSize: "0.75rem",
+                              minHeight: "38px",
+                            }),
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <Lbl text="Supplier Code" />
+                        <input
+                          type="text"
+                          readOnly
+                          value={invoiceSupplierCode}
+                          placeholder="Auto-filled"
+                          className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-gray-50 text-xs font-mono font-bold text-amber-900 outline-none"
+                        />
+                      </div>
+                      <div>
+                        <Lbl text="Vendor Bill / Ref No." />
+                        <input
+                          type="text"
+                          value={invoiceRefNumber}
+                          onChange={(e) => setInvoiceRefNumber(e.target.value)}
+                          placeholder="Vendor Invoice / Bill No..."
+                          className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white text-xs font-medium outline-none focus:border-amber-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Invoice Dates & Warehouse Loading Card */}
                 <div className="p-4 rounded-2xl bg-white border border-gray-200 shadow-2xs">
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                     <div>
@@ -3646,7 +3610,7 @@ export default function BOQDetailsPage() {
                   </div>
                 </div>
 
-                {/* Point 3 & 5: Line Items Table (Single Qty, Multi-Rate, Full BOQ & Material Nesting) */}
+                {/* Line Items Table */}
                 <div className="border border-gray-200 rounded-2xl overflow-hidden bg-white shadow-2xs">
                   <div className="px-4 py-2.5 bg-slate-50 border-b border-gray-200 flex items-center justify-between">
                     <span className="font-extrabold text-gray-800 text-xs flex items-center gap-1.5">
@@ -3675,7 +3639,6 @@ export default function BOQDetailsPage() {
                       </thead>
                       <tbody className="divide-y divide-gray-100 bg-white">
                         {invoiceLines.map((line) => {
-                          // Header / Scope row (1002, 1101, etc.)
                           if (line.isHeader) {
                             return (
                               <tr key={line._id} className="bg-indigo-50/70 border-y border-indigo-200">
@@ -3700,7 +3663,6 @@ export default function BOQDetailsPage() {
                             );
                           }
 
-                          // Point 3: Single Qty driving both Supply and Installation amounts
                           const lineQty = parseFloat(line.quantity) || 0;
                           const supplyAmt = lineQty * (parseFloat(line.unitRateSupply) || 0);
                           const installAmt = lineQty * (parseFloat(line.unitRateInstallation) || 0);
@@ -3731,7 +3693,6 @@ export default function BOQDetailsPage() {
                                 {line.unit}
                               </td>
                               <td className="px-2 py-2 align-top">
-                                {/* Single Qty Input */}
                                 <input
                                   type="number"
                                   min="0"
@@ -3765,7 +3726,7 @@ export default function BOQDetailsPage() {
                   </div>
                 </div>
 
-                {/* Point 1: Financial Summary with Editable GST */}
+                {/* Financial Summary */}
                 <div className="p-4 rounded-2xl bg-white border border-gray-200 shadow-2xs space-y-3">
                   <div className="font-extrabold text-xs text-gray-800 uppercase tracking-wider">
                     Financial Summary
@@ -3782,7 +3743,6 @@ export default function BOQDetailsPage() {
                       />
                     </div>
 
-                    {/* Point 1: Editable GST Rate Input */}
                     <div>
                       <Lbl text="GST Rate (%)" req />
                       <div className="flex items-center">
@@ -3907,18 +3867,24 @@ export default function BOQDetailsPage() {
                   <button
                     type="submit"
                     disabled={generatingInvoice || taxableSubtotal <= 0}
-                    className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-[#5c54e5] text-white font-bold text-xs hover:bg-indigo-700 shadow-md shadow-indigo-100 transition-all disabled:opacity-50 cursor-pointer"
+                    className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-white font-bold text-xs shadow-md transition-all disabled:opacity-50 cursor-pointer ${invoiceTargetType === "sales"
+                      ? "bg-[#5c54e5] hover:bg-indigo-700 shadow-indigo-100"
+                      : "bg-amber-600 hover:bg-amber-700 shadow-amber-100"
+                      }`}
                   >
                     {generatingInvoice ? (
                       <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                     ) : (
                       <FaCheck size={11} />
                     )}
-                    {generatingInvoice ? "Creating Official Invoice..." : "Create Sales Invoice"}
+                    {generatingInvoice
+                      ? "Creating Invoice..."
+                      : invoiceTargetType === "sales"
+                        ? "Create Sales Invoice"
+                        : "Create Purchase Invoice"}
                   </button>
                 </div>
               </form>
-
             </div>
           </div>
         );
