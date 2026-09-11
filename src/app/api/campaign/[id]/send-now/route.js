@@ -1,4 +1,327 @@
+// export const runtime = "nodejs";
+
+// import dbConnect from "@/lib/db";
+// import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
+// import EmailCampaign from "@/models/EmailCampaign";
+// import EmailLog from "@/models/EmailLog";
+// import Customer from "@/models/CustomerModel";
+// import Lead from "@/models/crm/load";
+// import EmailMaster from "@/models/emailMaster/emailMaster";
+// import nodemailer from "nodemailer";
+// import crypto from "crypto";
+// import pLimit from "p-limit"; // 👈 concurrency control
+
+// // -------------------------
+// // CONFIGS
+// // -------------------------
+// const BASE_URL = (process.env.NEXT_PUBLIC_BASE_URL || process.env.BASE_URL || "").replace(/\/$/, "");
+// if (!BASE_URL) throw new Error("BASE_URL not defined");
+
+// // How many emails to send concurrently
+// const CONCURRENCY = 10; // adjust based on your SMTP limits (Gmail allows ~100 per minute)
+
+// // -------------------------
+// // Helpers
+// // -------------------------
+// const isValidEmail = (email) =>
+//   typeof email === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+
+// function tryDecryptEncryptedPassword(encrypted) {
+//   if (!encrypted) return null;
+//   const secret = process.env.ENCRYPTION_KEY;
+//   if (!secret) return null;
+//   try {
+//     let ivBuf, cipherBuf;
+//     if (typeof encrypted === "string" && encrypted.includes(":")) {
+//       const [a, b] = encrypted.split(":");
+//       ivBuf = Buffer.from(a, "hex");
+//       cipherBuf = Buffer.from(b, "hex");
+//     } else {
+//       const all = Buffer.from(encrypted, "base64");
+//       ivBuf = all.slice(0, 16);
+//       cipherBuf = all.slice(16);
+//     }
+//     const key = crypto.createHash("sha256").update(secret).digest();
+//     const decipher = crypto.createDecipheriv("aes-256-cbc", key, ivBuf);
+//     let decrypted = decipher.update(cipherBuf, undefined, "utf8");
+//     decrypted += decipher.final("utf8");
+//     return decrypted;
+//   } catch (err) {
+//     return null;
+//   }
+// }
+
+// async function buildTransporterForEmailMaster(emailMaster) {
+//   if (!emailMaster) return null;
+//   const user = emailMaster.email;
+//   const pass = emailMaster.encryptedAppPassword
+//     ? tryDecryptEncryptedPassword(emailMaster.encryptedAppPassword)
+//     : null;
+//   if (!user || !pass) return null;
+//   const service = (emailMaster.service || "").toLowerCase();
+  
+//   const baseOptions = {
+//     pool: true,           // 👈 enable connection pooling
+//     maxConnections: 5,    // 👈 number of simultaneous connections
+//     maxMessages: 100,     // 👈 reuse connection for many emails
+//   };
+
+//   if (service === "gmail") {
+//     return nodemailer.createTransport({
+//       service: "gmail",
+//       auth: { user, pass },
+//       ...baseOptions,
+//     });
+//   }
+//   if (["outlook", "office365", "hotmail"].includes(service)) {
+//     return nodemailer.createTransport({
+//       host: "smtp.office365.com",
+//       port: 587,
+//       secure: false,
+//       auth: { user, pass },
+//       requireTLS: true,
+//       tls: { rejectUnauthorized: false },
+//       ...baseOptions,
+//     });
+//   }
+//   return null;
+// }
+
+// function buildTransporterFromEnv() {
+//   if (process.env.SMTP_USER && process.env.SMTP_PASS) {
+//     return nodemailer.createTransport({
+//       service: "gmail",
+//       auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+//       pool: true,
+//       maxConnections: 5,
+//       maxMessages: 100,
+//     });
+//   }
+//   return null;
+// }
+
+// function formatFrom(name, email) {
+//   if (!email) return name || "no-reply@example.com";
+//   return name ? `${name} <${email}>` : email;
+// }
+
+// // -------------------------
+// // POST Handler
+// // -------------------------
+// export async function POST(req, context) {
+//   try {
+//     await dbConnect();
+//     const token = getTokenFromHeader(req);
+//     if (!token)
+//       return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), { status: 401 });
+
+//     const decoded = verifyJWT(token);
+//     if (!decoded?.companyId)
+//       return new Response(JSON.stringify({ success: false, error: "Invalid token" }), { status: 403 });
+
+//     const id = context?.params?.id;
+//     const campaign = await EmailCampaign.findById(id);
+//     if (!campaign)
+//       return new Response(JSON.stringify({ success: false, error: "Not found" }), { status: 404 });
+
+//     // 1. Build & Clean Recipients
+//     let recipients = [];
+//     if (campaign.recipientSource === "segment") {
+//       const Model = campaign.recipientList === "source_customers" ? Customer : Lead;
+//       const data = await Model.find({ companyId: decoded.companyId }, "email mobileNo");
+//       recipients = data.map((d) => (campaign.channel === "email" ? d.email : d.mobileNo)).filter(Boolean);
+//     } else if (campaign.recipientSource === "manual") {
+//       recipients = (campaign.recipientManual || "").split(/[\n,]+/).map((x) => x.trim()).filter(Boolean);
+//     } else if (campaign.recipientSource === "excel") {
+//       recipients = campaign.recipientExcelEmails || campaign.recipients || [];
+//     }
+
+//     if (campaign.channel === "email") {
+//       recipients = [...new Set(recipients.map((e) => e.toLowerCase().trim()).filter(isValidEmail))];
+//     } else {
+//       recipients = recipients
+//         .map((n) => {
+//           let num = n.toString().replace(/\D/g, "");
+//           return num.startsWith("91") ? num : "91" + num.replace(/^0/, "");
+//         })
+//         .filter(Boolean);
+//     }
+
+//     if (!recipients.length) {
+//       return new Response(JSON.stringify({ success: false, error: "No recipients" }), { status: 400 });
+//     }
+
+//     // 2. Transporter Setup (with pooling)
+//     let emailMaster =
+//       (await EmailMaster.findById(campaign.emailMasterId).lean()) ||
+//       (await EmailMaster.findOne({ companyId: campaign.companyId, status: "Active" }).lean());
+
+//     let transporter = (await buildTransporterForEmailMaster(emailMaster)) || buildTransporterFromEnv();
+//     if (!transporter && campaign.channel === "email") {
+//       return new Response(JSON.stringify({ success: false, error: "SMTP config missing" }), { status: 500 });
+//     }
+
+//     const fromEmail = emailMaster?.email || process.env.SMTP_USER || "no-reply@example.com";
+//     const fromName = emailMaster?.owner || campaign.sender || "";
+//     const fromHeader = formatFrom(fromName, fromEmail);
+
+//     // 3. Send Emails Concurrently with Idempotency
+//     if (campaign.channel === "email") {
+//       const limit = pLimit(CONCURRENCY);
+
+//       // Prepare CC list from campaign (once, outside loop)
+//       let ccList = [];
+//       if (campaign.cc) {
+//         if (Array.isArray(campaign.cc)) {
+//           ccList = campaign.cc.filter(isValidEmail);
+//         } else if (typeof campaign.cc === "string") {
+//           ccList = campaign.cc.split(/[\n,]+/).map((s) => s.trim()).filter(isValidEmail);
+//         }
+//       }
+
+//       // Create an array of send tasks
+//       const sendTasks = recipients.map((to) =>
+//         limit(async () => {
+//           // --- Idempotency: check if already sent (by unique index or existing log)
+//           const existingLog = await EmailLog.findOne({
+//             campaignId: campaign._id,
+//             to,
+//             status: { $in: ["sent", "sending"] },
+//           });
+//           if (existingLog) {
+//             console.log(`Skipping already processed email for ${to}`);
+//             return { to, status: "skipped" };
+//           }
+
+//           // Create log entry (if duplicate, unique index will throw)
+//           let log;
+//           try {
+//             log = await EmailLog.create({
+//               companyId: campaign.companyId,
+//               campaignId: campaign._id,
+//               to,
+//               status: "sending",
+//               emailMasterId: emailMaster?._id || null,
+//             });
+//           } catch (err) {
+//             // Duplicate key error -> already being processed
+//             if (err.code === 11000) {
+//               console.log(`Duplicate log prevented for ${to}, skipping`);
+//               return { to, status: "duplicate_skipped" };
+//             }
+//             throw err;
+//           }
+
+//           // Build tracking elements
+//           let targetUrl = campaign.ctaLink || "";
+//           let trackedLink = "";
+//           if (campaign.ctaText && targetUrl) {
+//             if (!targetUrl.startsWith("http")) targetUrl = "https://" + targetUrl;
+//             const trackingUrl = `${BASE_URL}/api/track/link?logId=${log._id}&url=${encodeURIComponent(targetUrl)}`;
+//             trackedLink = `<a href="${trackingUrl}" style="display:inline-block; background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold;">${campaign.ctaText}</a>`;
+//           }
+
+//           let downloadLinksHtml = "";
+//           if (campaign.attachments && campaign.attachments.length) {
+//             const links = campaign.attachments.map((url, idx) => {
+//               const fileName = url.split("/").pop();
+//               const trackedDownloadUrl = `${BASE_URL}/api/track/attachment?id=${log._id}&fileIndex=${idx}`;
+//               return `<a href="${trackedDownloadUrl}" style="margin-right: 10px;">📎 Download ${fileName}</a>`;
+//             });
+//             downloadLinksHtml = `<div style="margin: 20px 0;">${links.join("<br/>")}</div>`;
+//           }
+
+//           const openPixel = `<img src="${BASE_URL}/api/track/email-open?id=${log._id}" width="1" height="1" style="display:none;" />`;
+
+//           const finalHtml = `
+//             <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+//               ${campaign.content || ""}
+//               <br/><br/>
+//               ${trackedLink}
+//               ${downloadLinksHtml}
+//               ${openPixel}
+//             </div>
+//           `;
+
+//           // Per-recipient CC (remove self if present)
+//           let toCcList = ccList.filter((cc) => cc.toLowerCase() !== to.toLowerCase());
+
+//           try {
+//             await transporter.sendMail({
+//               from: fromHeader,
+//               to,
+//               cc: toCcList,
+//               subject: campaign.emailSubject || "(no subject)",
+//               html: finalHtml,
+//               attachments: campaign.attachments.map((url) => ({
+//                 filename: url.split("/").pop(),
+//                 path: url,
+//               })),
+//             });
+//             log.status = "sent";
+//             log.sentAt = new Date();
+//             await log.save();
+//             return { to, status: "sent" };
+//           } catch (err) {
+//             log.status = "failed";
+//             log.error = err.message;
+//             await log.save();
+//             console.error(`Failed to send to ${to}:`, err.message);
+//             return { to, status: "failed", error: err.message };
+//           }
+//         })
+//       );
+
+//       // Wait for all sends to complete
+//       const results = await Promise.all(sendTasks);
+//       const sentCount = results.filter((r) => r.status === "sent").length;
+//       console.log(`Sent ${sentCount} of ${recipients.length} emails`);
+//     }
+
+//     // 4. WhatsApp (unchanged, but can also be made concurrent if needed)
+//     if (campaign.channel === "whatsapp") {
+//       const META_URL = "https://graph.facebook.com/v18.0";
+//       const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
+//       const META_TOKEN = process.env.META_WABA_TOKEN;
+//       const limit = pLimit(5); // WhatsApp may have stricter concurrency
+//       const tasks = recipients.map((num) =>
+//         limit(async () => {
+//           try {
+//             await fetch(`${META_URL}/${WHATSAPP_PHONE_ID}/messages`, {
+//               method: "POST",
+//               headers: { Authorization: `Bearer ${META_TOKEN}`, "Content-Type": "application/json" },
+//               body: JSON.stringify({
+//                 messaging_product: "whatsapp",
+//                 to: num,
+//                 type: "text",
+//                 text: { body: campaign.content },
+//               }),
+//             });
+//           } catch (e) {
+//             console.error("WA Error", e.message);
+//           }
+//         })
+//       );
+//       await Promise.all(tasks);
+//     }
+
+//     campaign.status = "Sent";
+//     campaign.sentAt = new Date();
+//     await campaign.save();
+
+//     return new Response(JSON.stringify({ success: true, total: recipients.length }), { status: 200 });
+//   } catch (err) {
+//     console.error("Campaign send error:", err);
+//     return new Response(JSON.stringify({ success: false, error: err.message }), { status: 500 });
+//   }
+// }
+
+//=================================================
+//Above code commented During the Deployment BUILD 
+//=================================================
+
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 import dbConnect from "@/lib/db";
 import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
@@ -9,16 +332,24 @@ import Lead from "@/models/crm/load";
 import EmailMaster from "@/models/emailMaster/emailMaster";
 import nodemailer from "nodemailer";
 import crypto from "crypto";
-import pLimit from "p-limit"; // 👈 concurrency control
+import pLimit from "p-limit";
 
 // -------------------------
-// CONFIGS
+// Runtime URL Helper
 // -------------------------
-const BASE_URL = (process.env.NEXT_PUBLIC_BASE_URL || process.env.BASE_URL || "").replace(/\/$/, "");
-if (!BASE_URL) throw new Error("BASE_URL not defined");
+function getBaseUrl() {
+  let url = process.env.NEXT_PUBLIC_BASE_URL || process.env.BASE_URL;
+
+  // Zero-config fallback on Vercel deployments
+  if (!url && process.env.VERCEL_URL) {
+    url = `https://${process.env.VERCEL_URL}`;
+  }
+
+  return (url || "http://localhost:3000").replace(/\/$/, "");
+}
 
 // How many emails to send concurrently
-const CONCURRENCY = 10; // adjust based on your SMTP limits (Gmail allows ~100 per minute)
+const CONCURRENCY = 10;
 
 // -------------------------
 // Helpers
@@ -59,11 +390,11 @@ async function buildTransporterForEmailMaster(emailMaster) {
     : null;
   if (!user || !pass) return null;
   const service = (emailMaster.service || "").toLowerCase();
-  
+
   const baseOptions = {
-    pool: true,           // 👈 enable connection pooling
-    maxConnections: 5,    // 👈 number of simultaneous connections
-    maxMessages: 100,     // 👈 reuse connection for many emails
+    pool: true,
+    maxConnections: 5,
+    maxMessages: 100,
   };
 
   if (service === "gmail") {
@@ -110,6 +441,8 @@ function formatFrom(name, email) {
 // -------------------------
 export async function POST(req, context) {
   try {
+    const BASE_URL = getBaseUrl();
+
     await dbConnect();
     const token = getTokenFromHeader(req);
     if (!token)
@@ -182,7 +515,7 @@ export async function POST(req, context) {
       // Create an array of send tasks
       const sendTasks = recipients.map((to) =>
         limit(async () => {
-          // --- Idempotency: check if already sent (by unique index or existing log)
+          // Check if already processed
           const existingLog = await EmailLog.findOne({
             campaignId: campaign._id,
             to,
@@ -193,7 +526,6 @@ export async function POST(req, context) {
             return { to, status: "skipped" };
           }
 
-          // Create log entry (if duplicate, unique index will throw)
           let log;
           try {
             log = await EmailLog.create({
@@ -204,7 +536,6 @@ export async function POST(req, context) {
               emailMasterId: emailMaster?._id || null,
             });
           } catch (err) {
-            // Duplicate key error -> already being processed
             if (err.code === 11000) {
               console.log(`Duplicate log prevented for ${to}, skipping`);
               return { to, status: "duplicate_skipped" };
@@ -238,8 +569,7 @@ export async function POST(req, context) {
               ${campaign.content || ""}
               <br/><br/>
               ${trackedLink}
-              ${downloadLinksHtml}
-              ${openPixel}
+              ${downloadLinksHtml}${openPixel}
             </div>
           `;
 
@@ -272,18 +602,17 @@ export async function POST(req, context) {
         })
       );
 
-      // Wait for all sends to complete
       const results = await Promise.all(sendTasks);
       const sentCount = results.filter((r) => r.status === "sent").length;
-      console.log(`Sent ${sentCount} of ${recipients.length} emails`);
+      console.log(`Sent ${sentCount} of${recipients.length} emails`);
     }
 
-    // 4. WhatsApp (unchanged, but can also be made concurrent if needed)
+    // 4. WhatsApp
     if (campaign.channel === "whatsapp") {
       const META_URL = "https://graph.facebook.com/v18.0";
       const WHATSAPP_PHONE_ID = process.env.WHATSAPP_PHONE_ID;
       const META_TOKEN = process.env.META_WABA_TOKEN;
-      const limit = pLimit(5); // WhatsApp may have stricter concurrency
+      const limit = pLimit(5);
       const tasks = recipients.map((num) =>
         limit(async () => {
           try {
@@ -315,8 +644,6 @@ export async function POST(req, context) {
     return new Response(JSON.stringify({ success: false, error: err.message }), { status: 500 });
   }
 }
-
-
 
 // export const runtime = "nodejs";
 
