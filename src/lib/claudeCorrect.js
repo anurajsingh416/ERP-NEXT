@@ -67,7 +67,9 @@ SCOPE OF ALLOWED CORRECTIONS:
 
 STRICT PRESERVATION CONSTRAINTS:
 - Keep ALL numbers, ratings, grades, and dimensions 100% exact (e.g., Fe500D, M25, 415V, 3C x 2.5, 9 Mtr, IP66).
-- If the text is already accurate, DO NOT alter it. Return it as-is with "changesMade": false.
+- Do NOT modify, round, or omit numbers, ratings, dimensions, or engineering grades (e.g., Fe500D, M25, 415V, 3C x 2.5, 9 Mtr, IP66).
+- ACRONYM INTEGRITY: NEVER alter letters, plural endings, or characters in technical abbreviations and parenthetical codes (e.g., keep "MCBDBS" exactly as "MCBDBS", do NOT remove or change the trailing 'S').
+- If the text is already technically accurate, return it as-is with "changesMade": false.
 
 ${catalogContext ? `CATALOG REFERENCE CONSTRAINTS:
 ${catalogContext}
