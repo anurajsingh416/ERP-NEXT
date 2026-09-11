@@ -5,19 +5,19 @@ const SECRET = process.env.JWT_SECRET;
 export function signToken(user) {
   return jwt.sign(
     {
-      id:          user._id,
-      name:        user?.name || user?.fullName || user?.companyName || "Unknown",
-      email:       user.email,
-      role:        user.role?.name ?? "Company",
-      type:        user.type,
+      id: user._id,
+      name: user?.name || user?.fullName || user?.companyName || "Unknown",
+      email: user.email,
+      role: user.role?.name ?? "Company",
+      type: user.type,
       permissions: user.permissions,
-      companyId:   user.companyId ? user.companyId : user._id,
-          // ✅ ADD THIS
+      companyId: user.companyId ? user.companyId : user._id,
+      // ✅ ADD THIS
       modules: user.modules || {},
 
       // ✅ OPTIONAL (employee linking)
       employeeId: user.employeeId || null,
-        roles: user.roles || [],                 // ✅ Add roles array
+      roles: user.roles || [],                 // ✅ Add roles array
       assignedBooths: user.assignedBooths || [], // ✅ Add assigned booths
     },
     SECRET,
@@ -32,17 +32,17 @@ export function verifyJWT(token) {
       console.info("[Auth] Decoding development mock token");
       const payloadB64 = token.split(".")[1];
       const payloadStr = Buffer.from(payloadB64, "base64").toString("utf-8");
-      const payload    = JSON.parse(payloadStr);
+      const payload = JSON.parse(payloadStr);
 
       return {
-        id:          payload.sub   || "6a15514ab9dd73a453e928a3",
-        name:        payload.name  || "Dev User",
-        email:       payload.email || "",
-        role:        "customer",
-        type:        "customer",
+        id: payload.sub || "6a15514ab9dd73a453e928a3",
+        name: payload.name || "Dev User",
+        email: payload.email || "",
+        role: "customer",
+        type: "customer",
         permissions: {},
-        companyId:   "6a0577485cd0693d638778c8",
-        modules:     {},
+        companyId: "6a0577485cd0693d638778c8",
+        modules: {},
       };
     }
 
@@ -157,7 +157,7 @@ export function hasRole(user, roleName) {
 //   const auth = req.headers.get("authorization") || "";
 //   if (!auth.startsWith("Bearer ")) return null;
 //   return auth.split(" ")[1];
-  
+
 // }
 // export function hasPermission(user, moduleName, action) {
 //   if (!user) return false;
@@ -172,4 +172,8 @@ export function hasRole(user, roleName) {
 // }
 
 
-
+export async function getCompanyFromApiKey(apiKey) {
+  if (!apiKey) return null;
+  // Temporary stub to satisfy the build
+  return null;
+}
