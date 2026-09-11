@@ -208,7 +208,6 @@
 //=============================
 //Commented during Build Error
 //=============================
-
 "use client";
 
 import { useEffect, useState, useRef } from "react";
@@ -224,14 +223,20 @@ import {
   FaBoxes,
 } from "react-icons/fa";
 import { toast } from "react-toastify";
-import ReactToPrint from "react-to-print";
+import { useReactToPrint } from "react-to-print";
 
 export default function ProgressBillDetailPage() {
   const { id } = useParams();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [bill, setBill] = useState(null);
-  const componentRef = useRef();
+  const componentRef = useRef(null);
+
+  // Hook handles printing directly to the referenced DOM node
+  const handlePrint = useReactToPrint({
+    contentRef: componentRef,
+    documentTitle: bill ? `Progress-Bill-${bill.billNumber}` : "Progress-Bill",
+  });
 
   useEffect(() => {
     const fetchBill = async () => {
@@ -290,14 +295,12 @@ export default function ProgressBillDetailPage() {
             </h1>
           </div>
           <div className="flex gap-2">
-            <ReactToPrint
-              trigger={() => (
-                <button className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-600 text-white font-bold text-sm hover:bg-gray-700 transition-colors">
-                  <FaPrint size={14} /> Print
-                </button>
-              )}
-              content={() => componentRef.current}
-            />
+            <button
+              onClick={handlePrint}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-600 text-white font-bold text-sm hover:bg-gray-700 transition-colors"
+            >
+              <FaPrint size={14} /> Print
+            </button>
             <button
               onClick={() => router.push(`/admin/construction/progress-billing?edit=${bill._id}`)}
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 transition-colors"
