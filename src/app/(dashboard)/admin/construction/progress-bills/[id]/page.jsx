@@ -13,7 +13,7 @@ import {
   FaBoxes,
 } from "react-icons/fa";
 import { toast } from "react-toastify";
-import ReactToPrint from "react-to-print";
+import { ReactToPrint } from "react-to-print";
 
 export default function ProgressBillDetailPage() {
   const { id } = useParams();

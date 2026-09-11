@@ -1,4 +1,5 @@
 export const runtime = "nodejs";
+export const dynamic = 'force-dynamic';
 
 import axios from "axios";
 import * as cheerio from "cheerio";

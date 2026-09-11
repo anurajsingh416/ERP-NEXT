@@ -177,3 +177,16 @@ export async function getCompanyFromApiKey(apiKey) {
   // Temporary stub to satisfy the build
   return null;
 }
+
+export function getCompanyIdFromToken(tokenOrPayload) {
+  if (!tokenOrPayload) return null;
+
+  // If passed a raw JWT string instead of an already-decoded object
+  if (typeof tokenOrPayload === "string") {
+    const decoded = verifyJWT(tokenOrPayload);
+    return decoded?.companyId || decoded?.id || null;
+  }
+
+  // If passed an already decoded payload/user object
+  return tokenOrPayload.companyId || tokenOrPayload.id || null;
+}
