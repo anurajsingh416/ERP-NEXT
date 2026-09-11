@@ -2459,10 +2459,20 @@ export default function BOQDetailsPage() {
     label: c.customerName || c.name || c.contactPersonName || c._id,
   }));
 
+
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center text-gray-400">Loading BOQ details...</div>
+      <div className="min-h-screen bg-slate-50/60 flex flex-col items-center justify-center p-6">
+        <div className="relative flex items-center justify-center">
+          <div className="w-16 h-16 rounded-2xl border-4 border-indigo-100 border-t-indigo-600 animate-spin" />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <FaFileInvoice className="text-indigo-600 animate-pulse text-lg" />
+          </div>
+        </div>
+        <p className="mt-4 text-xs font-black uppercase tracking-[0.2em] text-slate-700">
+          Loading BOQs...
+        </p>
       </div>
     );
   }
