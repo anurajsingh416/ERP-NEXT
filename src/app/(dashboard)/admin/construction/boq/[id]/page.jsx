@@ -1324,7 +1324,7 @@ import {
   FaSpinner,
 } from "react-icons/fa";
 import { HiDotsVertical } from "react-icons/hi";
-import { toast } from "react-toastify";
+import { toast, ToastContainer } from "react-toastify";
 
 let idCounter = 0;
 const generateId = () => ++idCounter;
@@ -2477,6 +2477,12 @@ export default function BOQDetailsPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-10">
+      <ToastContainer
+        position="top-right"
+        style={{
+          top: "env(safe-area-inset-top, 0px)",
+        }}
+      />
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-4 mb-8">

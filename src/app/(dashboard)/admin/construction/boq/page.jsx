@@ -1417,7 +1417,7 @@ import {
   FaTrashAlt,
 } from "react-icons/fa";
 import { HiDotsVertical } from "react-icons/hi";
-import { toast } from "react-toastify";
+import { toast, ToastContainer } from "react-toastify";
 
 // ─── Utility: generate unique ID ────────────────────────────────────────────
 let idCounter = 0;
@@ -2841,6 +2841,12 @@ export default function ConstructionBOQPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-10">
+      <ToastContainer
+        position="top-right"
+        style={{
+          top: "env(safe-area-inset-top, 0px)",
+        }}
+      />
       <datalist id="item-master-names">
         {itemMaster.map((im) => (
           <option key={im._id} value={im.itemName}>
