@@ -3,14 +3,17 @@ import dbConnect from "@/lib/db";
 import CompanySettings from "@/models/CompanySettings";
 import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
 
-export async function GET(req) {
-    await dbConnect();
+async function validateUser(req) {
     const token = getTokenFromHeader(req);
     const user = await verifyJWT(token);
+    if (!user) return { error: NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 }) };
+    return { user };
+}
 
-    if (!user) {
-        return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
-    }
+export async function GET(req) {
+    await dbConnect();
+    const { user, error } = await validateUser(req);
+    if (error) return error;
 
     try {
         const settings = await CompanySettings.findOne({ companyId: user.companyId }).lean();
@@ -30,18 +33,14 @@ export async function GET(req) {
     }
 }
 
-export async function POST(req) {
+async function saveApiKey(req) {
     await dbConnect();
-    const token = getTokenFromHeader(req);
-    const user = await verifyJWT(token);
-
-    if (!user) {
-        return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
-    }
+    const { user, error } = await validateUser(req);
+    if (error) return error;
 
     try {
-        const { apiKey } = await req.json();
-        const cleanKey = (apiKey || "").trim();
+        const { anthropicApiKey } = await req.json();
+        const cleanKey = (anthropicApiKey || "").trim();
 
         if (cleanKey && !cleanKey.startsWith("sk-ant-")) {
             return NextResponse.json(
@@ -63,4 +62,12 @@ export async function POST(req) {
     } catch (err) {
         return NextResponse.json({ success: false, message: err.message }, { status: 500 });
     }
+}
+
+export async function POST(req) {
+    return saveApiKey(req);
+}
+
+export async function PUT(req) {
+    return saveApiKey(req);
 }

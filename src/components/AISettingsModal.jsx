@@ -45,7 +45,7 @@ export default function AISettingsModal({ isOpen, onClose }) {
         try {
             const token = localStorage.getItem("token");
             const res = await api.put(
-                "/settings/company",
+                "/ai-key",
                 { anthropicApiKey: apiKey },
                 { headers: { Authorization: `Bearer ${token}` } }
             );
