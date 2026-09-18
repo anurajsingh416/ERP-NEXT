@@ -170,7 +170,7 @@ export default function LabourWorkPage() {
     }
 
     const payload = {
-      project: selectedProject.value,
+      project: selectedProject?.value || null,
       assignedLabours: selectedLabours.map((l) => l.value),
       workTitle,
       workDescription,

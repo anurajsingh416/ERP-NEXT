@@ -693,7 +693,8 @@ const BOQSchema = new mongoose.Schema(
     project: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Project",
-      required: true,
+      required: false,
+      default: null,
     },
 
     contractor: {

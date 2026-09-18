@@ -183,7 +183,7 @@ export default function MaterialConsumptionPage() {
     }
 
     const payload = {
-      project: selectedProject.value,
+      project: selectedProject?.value || null,
       workOrderId: selectedWorkOrder?.value || null,
       consumptionDate,
       items: validRows.map(({ _id, itemId, boqItemId, materialName, unit, quantity, rate, amount, location, remarks }) => ({

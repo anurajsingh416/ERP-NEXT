@@ -965,7 +965,7 @@ export async function POST(req) {
     if (contentType.includes("application/json")) {
       const { projectId, contractorId, customerId, phase, mappedParents } = await req.json();
 
-      if (!projectId || !Array.isArray(mappedParents) || mappedParents.length === 0) {
+      if ( !Array.isArray(mappedParents) || mappedParents.length === 0) {
         return NextResponse.json(
           { success: false, message: "Missing project ID or items." },
           { status: 400 }
@@ -1236,7 +1236,7 @@ export async function POST(req) {
 
       const boq = new BOQ({
         companyId: targetCompanyId,
-        project: projectId,
+        // project: projectId,
         contractor: contractorId || null,
         customer: customerId || null,
         boqNumber,
@@ -1265,10 +1265,12 @@ export async function POST(req) {
     // ─────────────────────────────────────────────────────────────────────────
     const formData = await req.formData();
     const file = formData.get("file");
-    const projectId = formData.get("projectId");
+    // const projectId = formData.get("projectId");
 
-    if (!file || !projectId) {
-      return NextResponse.json({ success: false, message: "File & Project required." }, { status: 400 });
+    if (!file)
+    // !projectId) 
+    {
+      return NextResponse.json({ success: false, message: "File  required." }, { status: 400 });
     }
 
     // const buffer = await file.arrayBuffer();

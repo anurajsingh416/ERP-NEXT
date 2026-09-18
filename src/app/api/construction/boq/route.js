@@ -1030,7 +1030,7 @@ export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
-    const projectId = searchParams.get("projectId");
+    // const projectId = searchParams.get("projectId");
     const statusFilter = searchParams.get("status");
     const phase = searchParams.get("phase");
     const page = Math.max(parseInt(searchParams.get("page")) || 1, 1);
@@ -1041,7 +1041,7 @@ export async function GET(req) {
         return NextResponse.json({ success: false, message: "Invalid BOQ ID format" }, { status: 400 });
       }
       const boq = await BOQ.findOne({ _id: id, companyId: user.companyId })
-        .populate("project", "name")
+        // .populate("project", "name")
         .populate("contractor", "supplierName supplierCode contactPersonName mobileNumber")
         .populate("customer", "customerName contactPersonName mobileNumber")
         .populate("createdBy", "name")
@@ -1056,14 +1056,14 @@ export async function GET(req) {
     }
 
     const query = { companyId: user.companyId };
-    if (projectId) query.project = projectId;
+    // if (projectId) query.project = projectId;
     if (statusFilter && statusFilter !== "all") query.status = statusFilter;
     if (phase && phase !== "all") query.phase = phase;
 
     const skip = (page - 1) * limit;
     const [boqs, total] = await Promise.all([
       BOQ.find(query)
-        .populate("project", "name")
+        // .populate("project", "name")
         .populate("contractor", "supplierName supplierCode contactPersonName mobileNumber")
         .populate("customer", "customerName contactPersonName mobileNumber")
         .sort({ createdAt: -1 })
@@ -1106,9 +1106,9 @@ export async function POST(req) {
       taxService,
     } = body;
 
-    if (!project) {
-      return NextResponse.json({ success: false, message: "Project is required" }, { status: 400 });
-    }
+    // if (!project) {
+    //   return NextResponse.json({ success: false, message: "Project is required" }, { status: 400 });
+    // }
     if (!boqNumber || !boqNumber.trim()) {
       return NextResponse.json({ success: false, message: "BOQ Number is required" }, { status: 400 });
     }
@@ -1116,13 +1116,13 @@ export async function POST(req) {
       return NextResponse.json({ success: false, message: "At least one item is required" }, { status: 400 });
     }
 
-    const projectDoc = await Project.findOne({ _id: project, company: user.companyId });
-    if (!projectDoc) {
-      return NextResponse.json(
-        { success: false, message: "Invalid project – it does not belong to your company." },
-        { status: 400 }
-      );
-    }
+    // const projectDoc = await Project.findOne({ _id: project, company: user.companyId });
+    // if (!projectDoc) {
+    //   return NextResponse.json(
+    //     { success: false, message: "Invalid project – it does not belong to your company." },
+    //     { status: 400 }
+    //   );
+    // }
 
     let contractorId = null;
     if (contractor) {
@@ -1170,7 +1170,7 @@ export async function POST(req) {
     await boq.save();
 
     await boq.populate([
-      { path: "project", select: "name" },
+      // { path: "project", select: "name" },
       { path: "contractor", select: "supplierName supplierCode contactPersonName mobileNumber" },
       { path: "customer", select: "customerName contactPersonName mobileNumber" },
     ]);
@@ -1220,13 +1220,13 @@ export async function PUT(req) {
       return NextResponse.json({ success: false, message: "BOQ not found" }, { status: 404 });
     }
 
-    if (updateData.project) {
-      const projectDoc = await Project.findOne({ _id: updateData.project, company: user.companyId });
-      if (!projectDoc) {
-        return NextResponse.json({ success: false, message: "Invalid project" }, { status: 400 });
-      }
-      boq.project = updateData.project;
-    }
+    // if (updateData.project) {
+    //   const projectDoc = await Project.findOne({ _id: updateData.project, company: user.companyId });
+    //   if (!projectDoc) {
+    //     return NextResponse.json({ success: false, message: "Invalid project" }, { status: 400 });
+    //   }
+    //   boq.project = updateData.project;
+    // }
 
     if (updateData.contractor !== undefined) {
       boq.contractor = updateData.contractor || null;
@@ -1288,7 +1288,7 @@ export async function PUT(req) {
     await boq.save();
 
     await boq.populate([
-      { path: "project", select: "name" },
+      // { path: "project", select: "name" },
       { path: "contractor", select: "supplierName supplierCode contactPersonName mobileNumber" },
       { path: "customer", select: "customerName contactPersonName mobileNumber" },
     ]);

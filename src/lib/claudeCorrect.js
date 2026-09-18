@@ -64,11 +64,12 @@ SCOPE OF ALLOWED CORRECTIONS:
 2. Technical unit formatting (e.g., "sqmm" -> "sq.mm", "cbl" -> "Cable", "mtr" -> "Meter", "ltr" -> "Liter").
 3. Repeated phrase cleanups (e.g., "Civil work... Civil work").
 4. Casing standardization (Title Case or Standard Technical Casing).
+5. OCR/scan corruption artifacts: random stray lowercase letters embedded inside an otherwise correctly-spelled uppercase or title-case word (a common PDF-to-Excel conversion artifact). Remove the stray letter(s) to recover the real word. Examples: "PROTECTisION" -> "PROTECTION", "COORDINATaION" -> "COORDINATION", "SuPPLY" -> "SUPPLY". This applies only when removing the letter(s) produces a clearly correct, recognizable English/technical word — never apply this to strings that don't resolve into a real word.
 
 STRICT PRESERVATION CONSTRAINTS:
 - Keep ALL numbers, ratings, grades, and dimensions 100% exact (e.g., Fe500D, M25, 415V, 3C x 2.5, 9 Mtr, IP66).
 - Do NOT modify, round, or omit numbers, ratings, dimensions, or engineering grades (e.g., Fe500D, M25, 415V, 3C x 2.5, 9 Mtr, IP66).
-- ACRONYM INTEGRITY: NEVER alter letters, plural endings, or characters in technical abbreviations and parenthetical codes (e.g., keep "MCBDBS" exactly as "MCBDBS", do NOT remove or change the trailing 'S').
+- ACRONYM INTEGRITY: NEVER alter letters, plural endings, or characters in a genuine technical abbreviation or parenthetical code — meaning a short sequence of letters/numbers with no vowel-consonant word structure (e.g., "MCBDBS", "IP66", "3C"). This rule does NOT apply to corrupted real words like "PROTECTisION" — those fall under rule 5 above and should be fixed. The distinguishing test: does removing the odd-cased letter(s) produce a real dictionary/technical word? If yes, fix it. If the string was never a real word to begin with (like MCBDBS), leave it.
 - If the text is already technically accurate, return it as-is with "changesMade": false.
 
 ${catalogContext ? `CATALOG REFERENCE CONSTRAINTS:

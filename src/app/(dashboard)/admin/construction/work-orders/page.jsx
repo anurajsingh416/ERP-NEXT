@@ -344,7 +344,7 @@ export default function WorkOrdersPage() {
 
     const payload = {
       orderType: workOrderType,
-      project: selectedProject.value,
+      project: selectedProject?.value || null,
       boq: selectedBoq?.value || null,
       contractor: workOrderType === "contractor" ? selectedContractor.value : null,
       workOrderNumber: woNumber || `WO-${Date.now().toString().slice(-6)}`,
@@ -691,7 +691,7 @@ export default function WorkOrdersPage() {
                 <span className="font-bold text-gray-400">Items:</span>
                 <span className="font-black text-indigo-600">
                   {items.filter(i => i.description && i.description.trim() !== "").length +
-                   materials.filter(m => m.itemName && m.itemName.trim() !== "").length}
+                    materials.filter(m => m.itemName && m.itemName.trim() !== "").length}
                 </span>
               </div>
             </div>

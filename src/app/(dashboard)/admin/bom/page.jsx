@@ -332,7 +332,7 @@ export default function ConstructionBOQPage() {
     }
 
     const payload = {
-      project: selectedProject.value,
+      project: selectedProject?.value || null,
       boqNumber,
       date: boqDate,
       status,

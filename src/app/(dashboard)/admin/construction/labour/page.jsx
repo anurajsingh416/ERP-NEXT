@@ -105,7 +105,7 @@ export default function LabourPage() {
     }
 
     const payload = {
-      project: selectedProject.value,
+      project: selectedProject?.value || null,
       contractor: selectedSupplier?.value || null,
       name,
       phone,

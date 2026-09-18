@@ -1522,9 +1522,9 @@ export default function BOQDetailsPage() {
 
         try {
           const pRes = await api.get("/construction/projects", headers);
-          setProjects(pRes.data.data || pRes.data || []);
+          // setProjects(pRes.data.data || pRes.data || []);
         } catch {
-          setProjects([]);
+          // setProjects([]);
         }
       } catch (err) {
         console.error("❌ Error fetching BOQ details:", err);
@@ -1793,7 +1793,7 @@ export default function BOQDetailsPage() {
       const headers = { headers: { Authorization: `Bearer ${token}` } };
 
       const payload = {
-        project: boq.project?._id || boq.project,
+        // project: boq.project?._id || boq.project,
         boq: boq._id,
         orderType,
         contractor: orderType === "contractor" ? selectedContractor?.value : null,
@@ -1940,7 +1940,7 @@ export default function BOQDetailsPage() {
       const updatedMaterials = [...currentMaterials, ...newMaterials];
 
       const payload = {
-        project: boq.project?._id || boq.project,
+        // project: boq.project?._id || boq.project,
         contractor: boq.contractor?._id || null,
         customer: boq.customer?._id || null,
         boqNumber: boq.boqNumber,
@@ -2501,7 +2501,7 @@ export default function BOQDetailsPage() {
               <FaFileInvoice className="text-indigo-600" /> BOQ: {boq.boqNumber}
             </h1>
             <p className="text-sm text-gray-400 mt-0.5">
-              Project: {boq.project?.name || "—"} · Contractor:{" "}
+              {/* Project: {boq.project?.name || "—"} · Contractor:{" "} */}
               {boq.contractor?.supplierName || boq.contractor?.name || "—"} · Total:{" "}
               {formatCurrency(boq.totalAmount)}
             </p>

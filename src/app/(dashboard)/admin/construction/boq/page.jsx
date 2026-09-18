@@ -1400,6 +1400,7 @@
 //     </div>
 //   );
 // }
+
 "use client";
 
 import React, { useEffect, useReducer, useCallback, useMemo, memo, useRef, useState } from "react";
@@ -2649,10 +2650,10 @@ export default function ConstructionBOQPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!selectedProject) {
-      toast.error("Please select a project.");
-      return;
-    }
+    // if (!selectedProject) {
+    //   toast.error("Please select a project.");
+    //   return;
+    // }
 
     const structuredItems = [];
     sections.forEach((sec) => {
@@ -2692,7 +2693,7 @@ export default function ConstructionBOQPage() {
     }
 
     const payload = {
-      project: selectedProject.value,
+      project: selectedProject?.value || null,
       contractor: selectedContractor?.value || null,
       customer: selectedCustomer?.value || null,
       boqNumber,
@@ -2722,7 +2723,9 @@ export default function ConstructionBOQPage() {
 
   // Step 1: Send file for Analysis
   const handleImport = async () => {
-    if (!selectedProjectImport || !importFile) {
+    if (!importFile)
+    // !selectedProjectImport || ) 
+    {
       toast.error("Please select a project and choose an Excel file.");
       return;
     }
@@ -2742,7 +2745,7 @@ export default function ConstructionBOQPage() {
     }, 450);
 
     const formData = new FormData();
-    formData.append("projectId", selectedProjectImport.value);
+    // formData.append("projectId", selectedProjectImport.value);
     formData.append("file", importFile);
 
     try {
@@ -2797,7 +2800,7 @@ export default function ConstructionBOQPage() {
     try {
       const token = localStorage.getItem("token");
       const payload = {
-        projectId: selectedProjectImport.value,
+        projectId: selectedProjectImport?.value || null,
         mappedParents: analysisData.items,
       };
 
@@ -3014,7 +3017,7 @@ export default function ConstructionBOQPage() {
 
             <form onSubmit={handleSubmit} className="p-8 space-y-6 overflow-y-auto flex-1">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="md:col-span-2">
+                {/* <div className="md:col-span-2">
                   <Lbl text="Project" req />
                   <Select
                     options={projects.map((p) => ({ value: p._id, label: p.name }))}
@@ -3024,7 +3027,7 @@ export default function ConstructionBOQPage() {
                     className="text-sm"
                     required
                   />
-                </div>
+                </div> */}
                 <div>
                   <Lbl text="BOQ Number" req />
                   <input
@@ -3185,7 +3188,7 @@ export default function ConstructionBOQPage() {
             <div className="flex-1 overflow-y-auto py-4 space-y-4">
               {!analysisData ? (
                 <div className="space-y-4 max-w-md mx-auto py-8">
-                  <div>
+                  {/* <div>
                     <Lbl text="Select Project" req />
                     <Select
                       options={projects.map((p) => ({ value: p._id, label: p.name }))}
@@ -3193,7 +3196,7 @@ export default function ConstructionBOQPage() {
                       onChange={setSelectedProjectImport}
                       placeholder="Choose project..."
                     />
-                  </div>
+                  </div> */}
                   <div>
                     <Lbl text="Upload Excel File" req />
                     <input
@@ -3605,7 +3608,8 @@ export default function ConstructionBOQPage() {
                   {!analysisData ? (
                     <button
                       onClick={handleImport}
-                      disabled={!importFile || !selectedProjectImport}
+                      disabled={!importFile}
+                      // !selectedProjectImport}
                       className="px-5 py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-sm hover:bg-emerald-700 disabled:opacity-50 transition-all shadow-md shadow-emerald-100 cursor-pointer"
                     >
                       Analyze Excel

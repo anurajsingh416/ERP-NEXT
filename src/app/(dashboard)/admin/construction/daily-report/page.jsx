@@ -315,7 +315,7 @@ export default function DailyReportPage() {
     const cleanConsumption = filterEmpty(materialConsumption, ["activityName"]);
 
     const payload = {
-      project: selectedProject.value,
+      project: selectedProject?.value || null,
       reportDate,
       workInProgress: cleanWork.map(({ _id, ...rest }) => rest),
       tomorrowPlan: cleanPlan.map(({ _id, ...rest }) => rest),
