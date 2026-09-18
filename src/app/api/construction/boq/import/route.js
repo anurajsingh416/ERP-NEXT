@@ -717,7 +717,6 @@
 //     );
 //   }
 // }
-
 import { NextResponse } from "next/server";
 import dbConnect from "@/lib/db";
 import BOQ from "@/models/contruction/BOQ";
@@ -727,6 +726,7 @@ import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
 import * as XLSX from "xlsx";
 import stringSimilarity from "string-similarity";
 import { batchCorrectItemsWithClaude } from "@/lib/claudeCorrect";
+export const maxDuration = 60;
 
 function isAuthorized(user) {
   if (!user) return false;
@@ -860,6 +860,10 @@ function parseExcelRows(rows, startRow) {
       ? 0
       : (hasQty ? number(rawQtyStr) : (hasRates ? 1 : 0));
 
+    if (isFooterMarker(srNo) || isFooterMarker(description)) {
+      break;
+    }
+
     if (!srNo && !description && !hasQty && !hasRates) continue;
     if (description === "." || isPreambleRow(srNo) || isPreambleRow(description)) continue;
     if (isTotalRow(srNo) || isTotalRow(description)) continue;
@@ -932,6 +936,16 @@ async function getNextItemCode(companyId) {
   if (!lastItem || !lastItem.itemCode) return "ITEM-00001";
   const num = parseInt(lastItem.itemCode.replace("ITEM-", ""), 10) || 0;
   return `ITEM-${String(num + 1).padStart(5, "0")}`;
+}
+function isFooterMarker(value) {
+  const text = clean(value).toUpperCase();
+  if (!text) return false;
+  return (
+    text.includes("SIGNATURE OF THE TENDERER") ||
+    text.includes("TOTAL AMOUNT IN FIGURE") ||
+    text.includes("IN WORDS") ||
+    text === "SIGNATURE"
+  );
 }
 
 export async function POST(req) {
@@ -1240,13 +1254,54 @@ export async function POST(req) {
       return NextResponse.json({ success: false, message: "File & Project required." }, { status: 400 });
     }
 
+    // const buffer = await file.arrayBuffer();
+    // const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
+    // const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    // const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: true });
+
     const buffer = await file.arrayBuffer();
     const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+
+    let sheet = null;
+
+    // 1. Prefer a sheet explicitly named like "BOQ-PHASE..."
+    for (const sheetName of workbook.SheetNames) {
+      if (sheetName.toUpperCase().includes("BOQ")) {
+        sheet = workbook.Sheets[sheetName];
+        break;
+      }
+    }
+
+    // 2. Fallback: scan every sheet for one containing "SR. NO." + "ITEM DESCRIPTION" headers
+    if (!sheet) {
+      for (const sheetName of workbook.SheetNames) {
+        const candidate = workbook.Sheets[sheetName];
+        const candidateRows = XLSX.utils.sheet_to_json(candidate, { header: 1, defval: "" });
+        const found = candidateRows.slice(0, 30).some(
+          (row) =>
+            clean(row?.[0]).toUpperCase() === "SR. NO." &&
+            clean(row?.[1]).toUpperCase() === "ITEM DESCRIPTION"
+        );
+        if (found) {
+          sheet = candidate;
+          break;
+        }
+      }
+    }
+
+    // 3. Last resort: fall back to the first sheet (old behavior)
+    if (!sheet) {
+      sheet = workbook.Sheets[workbook.SheetNames[0]];
+    }
+
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: true });
 
     const headerRow = findHeaderRow(rows);
     const parents = parseExcelRows(rows, headerRow);
+
+    console.log("🔍 Total raw rows in sheet:", rows.length);
+    console.log("🔍 Parsed parents count:", parents.length);
+    console.log("🔍 First few parent names:", parents.slice(0, 5).map(p => p.itemName));
 
     if (!parents.length) {
       return NextResponse.json({ success: false, message: "No items parsed from Excel." }, { status: 400 });
@@ -1269,21 +1324,55 @@ export async function POST(req) {
       });
     });
 
+    // const aiResults = [];
+    // const CHUNK_SIZE = 15;
+    // for (let i = 0; i < aiPayload.length; i += CHUNK_SIZE) {
+    //   const chunk = aiPayload.slice(i, i + CHUNK_SIZE);
+    //   try {
+    //     const cleaned = await batchCorrectItemsWithClaude(
+    //       targetCompanyId,
+    //       chunk,
+    //       allMasterItems.map((m) => m.itemName).filter(Boolean)
+    //     );
+    //     aiResults.push(...cleaned);
+    //   } catch (err) {
+    //     console.error("AI clean batch error:", err);
+    //   }
+    // }
+
     const aiResults = [];
     const CHUNK_SIZE = 15;
+    const CONCURRENCY = 5; // how many chunks run at once — tune based on your rate limits
+
+    // Split payload into chunks first
+    const chunks = [];
     for (let i = 0; i < aiPayload.length; i += CHUNK_SIZE) {
-      const chunk = aiPayload.slice(i, i + CHUNK_SIZE);
-      try {
-        const cleaned = await batchCorrectItemsWithClaude(
-          targetCompanyId,
-          chunk,
-          allMasterItems.map((m) => m.itemName).filter(Boolean)
-        );
-        aiResults.push(...cleaned);
-      } catch (err) {
-        console.error("AI clean batch error:", err);
+      chunks.push(aiPayload.slice(i, i + CHUNK_SIZE));
+    }
+
+    // Process chunks in parallel batches of CONCURRENCY
+    for (let i = 0; i < chunks.length; i += CONCURRENCY) {
+      const batch = chunks.slice(i, i + CONCURRENCY);
+      const batchResults = await Promise.allSettled(
+        batch.map((chunk) =>
+          batchCorrectItemsWithClaude(
+            targetCompanyId,
+            chunk,
+            allMasterItems.map((m) => m.itemName).filter(Boolean)
+          )
+        )
+      );
+
+      for (const result of batchResults) {
+        if (result.status === "fulfilled") {
+          aiResults.push(...result.value);
+        } else {
+          console.error("AI clean batch error:", result.reason);
+          // that chunk's items just won't have AI suggestions — parsing still continues
+        }
       }
     }
+
     const aiMap = new Map(aiResults.map((r) => [r.id, r]));
 
     let totalAiSuggestionsCount = 0;
