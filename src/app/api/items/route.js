@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import dbConnect from "@/lib/db";
 import Item from "@/models/ItemModels";
 import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
+import mongoose from "mongoose";
 
 // Role-based access
 function isAuthorized(user) {
@@ -53,9 +54,10 @@ export async function GET(req) {
     // 2) Stats endpoint (accurate totals)
     if (stats) {
       const aggregation = await Item.aggregate([
-        { $match: { companyId: user.companyId } },
+        { $match: { companyId: new mongoose.Types.ObjectId(user.companyId) } },
         { $group: { _id: "$itemType", count: { $sum: 1 } } }
       ]);
+      console.log("🔍 companyId type:", typeof user.companyId, "value:", user.companyId);
       const result = { total: 0, product: 0, service: 0, rawMat: 0 };
       aggregation.forEach(s => {
         if (s._id === "Product") result.product = s.count;

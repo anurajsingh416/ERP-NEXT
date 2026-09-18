@@ -2467,6 +2467,9 @@ export default function ConstructionBOQPage() {
   const [analysisProgress, setAnalysisProgress] = useState(0);
   const [progressMessage, setProgressMessage] = useState("Initializing AI analysis...");
 
+  const [finalLoadProgress, setFinalLoadProgress] = useState(0);
+  const [finalLoadMessage, setFinalLoadMessage] = useState("Preparing to load...");
+
   const toggleRowExpand = (id) => {
     setExpandedRowIds((prev) => ({
       ...prev,
@@ -2777,6 +2780,19 @@ export default function ConstructionBOQPage() {
   const handleFinalLoad = async () => {
     if (!analysisData || !analysisData.items?.length) return;
     setLoadingFinal(true);
+    setFinalLoadProgress(8);
+    setFinalLoadMessage("Validating items & linking Item Master...");
+
+    const progressInterval = setInterval(() => {
+      setFinalLoadProgress((prev) => {
+        if (prev >= 90) return prev;
+        const next = prev + Math.floor(Math.random() * 7) + 3;
+        if (next > 30 && next < 60) setFinalLoadMessage("Creating raw materials & products...");
+        if (next >= 60 && next < 85) setFinalLoadMessage("Building BOQ structure...");
+        if (next >= 85) setFinalLoadMessage("Finalizing & saving...");
+        return next > 90 ? 90 : next;
+      });
+    }, 400);
 
     try {
       const token = localStorage.getItem("token");
@@ -2792,20 +2808,33 @@ export default function ConstructionBOQPage() {
         },
       });
 
+      clearInterval(progressInterval);
+      setFinalLoadProgress(100);
+      setFinalLoadMessage("BOQ loaded successfully!");
+
       if (res.data.success) {
-        toast.success(res.data.message || "BOQ data loaded successfully!");
-        setIsImportModalOpen(false);
-        setAnalysisData(null);
-        setImportFile(null);
-        setSelectedProjectImport(null);
-        fetchBOQData();
+        setTimeout(() => {
+          setIsImportModalOpen(false);
+          setAnalysisData(null);
+          setImportFile(null);
+          setSelectedProjectImport(null);
+          setLoadingFinal(false);
+          setFinalLoadProgress(0);
+          fetchBOQData();
+          setTimeout(() => {
+            toast.success(res.data.message || "BOQ data loaded successfully!");
+          }, 100)
+        }, 400);
       } else {
         toast.error(res.data.message || "Failed to load data.");
+        setLoadingFinal(false);
+        setFinalLoadProgress(0);
       }
     } catch (err) {
+      clearInterval(progressInterval);
       toast.error(err.response?.data?.message || "Failed to load BOQ.");
-    } finally {
       setLoadingFinal(false);
+      setFinalLoadProgress(0);
     }
   };
 
@@ -3528,22 +3557,35 @@ export default function ConstructionBOQPage() {
 
                   <div className="relative w-32 h-9 border border-gray-300 rounded-xl overflow-hidden flex items-center shrink-0 bg-white shadow-sm">
                     <div className="absolute inset-0 flex items-center justify-center z-0">
-                      <span className="text-xs font-mono font-bold text-slate-700">
-                        {analysisProgress}%
-                      </span>
+                      <span className="text-xs font-mono font-bold text-slate-700">{analysisProgress}%</span>
                     </div>
-
                     <div
                       className="absolute inset-y-0 left-0 bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-300 ease-out z-10 overflow-hidden"
                       style={{ width: `${analysisProgress}%` }}
                     >
-                      <div
-                        className="absolute inset-0 flex items-center justify-center"
-                        style={{ width: "128px" }}
-                      >
-                        <span className="text-xs font-mono font-bold text-white">
-                          {analysisProgress}%
-                        </span>
+                      <div className="absolute inset-0 flex items-center justify-center" style={{ width: "128px" }}>
+                        <span className="text-xs font-mono font-bold text-white">{analysisProgress}%</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : loadingFinal ? (
+                <div className="flex-1 bg-indigo-50/50 border border-indigo-200 rounded-xl px-4 py-2 flex items-center justify-between shadow-inner">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse inline-block" />
+                    <span className="text-xs font-bold text-indigo-700">{finalLoadMessage}</span>
+                  </div>
+
+                  <div className="relative w-32 h-9 border border-indigo-300 rounded-xl overflow-hidden flex items-center shrink-0 bg-white shadow-sm">
+                    <div className="absolute inset-0 flex items-center justify-center z-0">
+                      <span className="text-xs font-mono font-bold text-slate-700">{finalLoadProgress}%</span>
+                    </div>
+                    <div
+                      className="absolute inset-y-0 left-0 bg-gradient-to-r from-indigo-500 to-blue-400 transition-all duration-300 ease-out z-10 overflow-hidden"
+                      style={{ width: `${finalLoadProgress}%` }}
+                    >
+                      <div className="absolute inset-0 flex items-center justify-center" style={{ width: "128px" }}>
+                        <span className="text-xs font-mono font-bold text-white">{finalLoadProgress}%</span>
                       </div>
                     </div>
                   </div>
@@ -3571,25 +3613,10 @@ export default function ConstructionBOQPage() {
                   ) : (
                     <button
                       onClick={handleFinalLoad}
-                      disabled={loadingFinal}
-                      className="relative overflow-hidden flex items-center justify-center gap-2.5 px-6 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 disabled:bg-indigo-500 disabled:cursor-not-allowed transition-all shadow-lg shadow-indigo-100 cursor-pointer min-w-[190px]"
+                      className="flex items-center gap-2.5 px-6 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 cursor-pointer"
                     >
-                      {/* Shimmer sweep effect while loading */}
-                      {loadingFinal && (
-                        <span className="absolute inset-0 -translate-x-full animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/20 to-transparent pointer-events-none" />
-                      )}
-
-                      {loadingFinal ? (
-                        <>
-                          <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin shrink-0" />
-                          <span className="tracking-wide">Importing to BOQ...</span>
-                        </>
-                      ) : (
-                        <>
-                          <FaCheck size={12} />
-                          <span>Load Data into BOQ</span>
-                        </>
-                      )}
+                      <FaCheck size={12} />
+                      <span>Load Data into BOQ</span>
                     </button>
                   )}
                 </>

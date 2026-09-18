@@ -827,23 +827,87 @@ export default function ItemManagement() {
   const [totalPages, setTotalPages] = useState(1);
   const [stats, setStats] = useState({ total: 0, product: 0, service: 0, rawMat: 0 });
 
+  // Temporary
+  const [showDropModal, setShowDropModal] = useState(false);
+  const [dropCode, setDropCode] = useState("");
+  const [dropConfirmText, setDropConfirmText] = useState("");
+  const [dropping, setDropping] = useState(false);
+
+  const DEMO_RESET_CODE = "0000";
+  // Temporary End
+
   // View modal state
   const [viewItem, setViewItem] = useState(null);
   const [viewModalOpen, setViewModalOpen] = useState(false);
 
+  // Temporary
+  const handleDropItemsCollection = async () => {
+    if (dropCode !== DEMO_RESET_CODE) {
+      toast.error("Incorrect code.");
+      return;
+    }
+    if (dropConfirmText !== "DELETE ALL ITEMS") {
+      toast.error('Please type "DELETE ALL ITEMS" exactly to confirm.');
+      return;
+    }
+
+    setDropping(true);
+    try {
+      const token = localStorage.getItem("token");
+      const res = await axios.delete("/api/items/drop-collection", {
+        headers: { Authorization: `Bearer ${token}` },
+        data: { code: dropCode }, // also verified server-side
+      });
+      if (res.data.success) {
+        toast.success(`Dropped ${res.data.deletedCount ?? ""} items. Collection reset.`);
+        setShowDropModal(false);
+        setDropCode("");
+        setDropConfirmText("");
+        refreshData();
+      } else {
+        toast.error(res.data.message || "Failed to reset items.");
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Failed to reset items.");
+    } finally {
+      setDropping(false);
+    }
+  };
+
+  // Temporary End
+
+  // const fetchAllItemsForStats = async () => {
+  //   try {
+  //     const token = localStorage.getItem("token");
+  //     const res = await axios.get("/api/items?limit=1000", {
+  //       headers: { Authorization: `Bearer ${token}` },
+  //     });
+  //     if (res.data.success) {
+  //       const all = res.data.data;
+  //       const uniqueTypes = [...new Set(all.map((i) => JSON.stringify(i.itemType)))];
+  //       console.log("🔍 Unique itemType values in data:", uniqueTypes);
+  //       const total = all.length;
+  //       const product = all.filter((i) => i.itemType === "Product").length;
+  //       const service = all.filter((i) => i.itemType === "Service").length;
+  //       const rawMat = all.filter((i) => i.itemType === "Raw Material").length;
+
+  //       setStats({ total, product, service, rawMat });
+
+  //     }
+  //   } catch (err) {
+  //     console.error(err);
+  //   }
+  // };
+
   const fetchAllItemsForStats = async () => {
     try {
       const token = localStorage.getItem("token");
-      const res = await axios.get("/api/items?limit=1000", {
+      const res = await axios.get("/api/items", {
+        params: { stats: true },
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.data.success) {
-        const all = res.data.data;
-        const total = all.length;
-        const product = all.filter((i) => i.itemType === "Product").length;
-        const service = all.filter((i) => i.itemType === "Service").length;
-        const rawMat = all.filter((i) => i.itemType === "Raw Material").length;
-        setStats({ total, product, service, rawMat });
+        setStats(res.data.data); // { total, product, service, rawMat } — already shaped correctly
       }
     } catch (err) {
       console.error(err);
@@ -1965,6 +2029,72 @@ export default function ItemManagement() {
           <QRScannerModal onScanSuccess={handleScanSuccess} onManual={handleManualEntry} onClose={() => setShowScanner(false)} />
         )}
         {viewModalOpen && <ViewItemModal item={viewItem} onClose={() => setViewModalOpen(false)} />}
+        {/* Temporary */}
+        {showDropModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl max-w-sm w-full shadow-2xl overflow-hidden border-2 border-red-200">
+              <div className="bg-red-50 border-b border-red-100 px-5 py-4 flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-red-100 flex items-center justify-center text-red-500 shrink-0">
+                  <FaExclamationCircle />
+                </div>
+                <div>
+                  <p className="font-bold text-red-800 text-sm">Reset Demo Data</p>
+                  <p className="text-[11px] text-red-500">This permanently deletes ALL items. Cannot be undone.</p>
+                </div>
+              </div>
+
+              <div className="p-5 space-y-4">
+                <div>
+                  <label className="block text-[10.5px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                    Reset Code
+                  </label>
+                  <input
+                    type="password"
+                    autoFocus
+                    className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm font-mono focus:outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100"
+                    placeholder="Enter code…"
+                    value={dropCode}
+                    onChange={(e) => setDropCode(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10.5px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+                    Type <span className="font-mono text-red-500">DELETE ALL ITEMS</span> to confirm
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm font-mono focus:outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100"
+                    placeholder="DELETE ALL ITEMS"
+                    value={dropConfirmText}
+                    onChange={(e) => setDropConfirmText(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="px-5 pb-5 flex gap-2">
+                <button
+                  onClick={() => {
+                    setShowDropModal(false);
+                    setDropCode("");
+                    setDropConfirmText("");
+                  }}
+                  className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-500 text-sm font-semibold hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDropItemsCollection}
+                  disabled={dropping || dropCode !== DEMO_RESET_CODE || dropConfirmText !== "DELETE ALL ITEMS"}
+                  className="flex-1 py-2.5 rounded-xl bg-red-600 text-white text-sm font-bold hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {dropping ? <FaSpinner className="animate-spin" /> : <FaTrash className="text-xs" />}
+                  {dropping ? "Dropping…" : "Drop Collection"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-6">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
             <div>
@@ -1972,6 +2102,14 @@ export default function ItemManagement() {
               <p className="text-sm text-gray-400 mt-0.5">{stats.total} total items</p>
             </div>
             <div className="flex flex-wrap gap-2">
+              {/* ⚠️ TEMPORARY DEMO-ONLY BUTTON — remove before production */}
+              <button
+                onClick={() => setShowDropModal(true)}
+                className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-white text-red-500 text-sm font-semibold border-2 border-dashed border-red-300 hover:bg-red-50 transition-all"
+                title="Demo only — requires reset code"
+              >
+                <FaExclamationCircle className="text-xs" /> Reset Demo Data
+              </button>
               <button
                 onClick={downloadTemplate}
                 className="flex items-center gap-2 px-3.5 py-2 rounded-lg bg-gray-900 text-white text-sm font-semibold hover:bg-gray-700 transition-all"
