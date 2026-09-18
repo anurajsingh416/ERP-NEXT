@@ -726,6 +726,7 @@ import { getTokenFromHeader, verifyJWT } from "@/lib/auth";
 import * as XLSX from "xlsx";
 import stringSimilarity from "string-similarity";
 import { batchCorrectItemsWithClaude } from "@/lib/claudeCorrect";
+import mongoose from "mongoose";
 export const maxDuration = 60;
 
 function isAuthorized(user) {
@@ -984,6 +985,23 @@ export async function POST(req) {
         }
       }
 
+      // ── Get the starting item-code number ONCE instead of once per item ──
+      const lastItem = await Item.findOne({
+        companyId: targetCompanyId,
+        itemCode: { $regex: /^ITEM-\d+$/ },
+      })
+        .sort({ createdAt: -1 })
+        .select("itemCode")
+        .lean();
+      let nextCodeNum = lastItem?.itemCode
+        ? (parseInt(lastItem.itemCode.replace("ITEM-", ""), 10) || 0) + 1
+        : 1;
+      const nextItemCode = () => `ITEM-${String(nextCodeNum++).padStart(5, "0")}`;
+
+      // ── Collect writes here instead of awaiting each one ──
+      const newItemDocs = [];   // plain objects → Item.insertMany at the end
+      const bulkUpdates = [];   // ops → Item.bulkWrite at the end
+
       const boqItems = [];
 
       for (const parent of mappedParents) {
@@ -992,7 +1010,6 @@ export async function POST(req) {
         const cleanCategory = cleanParentName;
         const normParentKey = canonicalizeText(cleanParentName);
 
-        // ── STEP 2A: Process Child Lines ──
         const resolvedRawMaterialsForParent = [];
         const resolvedBOQDescriptions = [];
         let parentSupplyTotal = 0;
@@ -1002,11 +1019,9 @@ export async function POST(req) {
           const descText = (desc.description || "").trim();
           if (!descText) continue;
 
-          // ⚠️ CHECK IF ROW IS AN EMPTY HEADER / SCOPE LINE (e.g. 1002)
           const isBillable = isBillableChildLine(desc);
 
           if (!isBillable) {
-            // Keep in BOQ hierarchy as a scope header, but DO NOT save in Item Master
             resolvedBOQDescriptions.push({
               itemId: null,
               srNo: desc.srNo || "",
@@ -1022,10 +1037,9 @@ export async function POST(req) {
               isRateOnly: false,
               isHeader: true,
             });
-            continue; // 👈 Skip Raw Material creation entirely
+            continue;
           }
 
-          // ── Legitimate Raw Materials with Quantity & Rates ──
           const normDescKey = canonicalizeText(descText);
           const supplyRate = Number(desc.unitRateSupply) || 0;
           const installRate = Number(desc.unitRateInstallation) || 0;
@@ -1064,11 +1078,12 @@ export async function POST(req) {
           }
 
           if (!rawMaterialDoc) {
-            const nextCode = await getNextItemCode(targetCompanyId);
-            const newRawMat = new Item({
+            // ── NEW raw material: build the object, don't save yet ──
+            const newRawMat = {
+              _id: new mongoose.Types.ObjectId(),
               companyId: targetCompanyId,
               createdBy: user.id,
-              itemCode: nextCode,
+              itemCode: nextItemCode(),
               serialNumber: desc.srNo || "",
               itemName: descText,
               description: descText,
@@ -1086,30 +1101,31 @@ export async function POST(req) {
               isRateOnly,
               status: "active",
               active: true,
-            });
+            };
 
-            await newRawMat.save();
+            newItemDocs.push(newRawMat);
             rawMaterialDoc = newRawMat;
             rawMaterialMap.set(normDescKey, newRawMat);
           } else {
-            await Item.updateOne(
-              { _id: rawMaterialDoc._id },
-              {
-                $set: {
-                  category: cleanCategory,
-                  unitRateSupply: supplyRate,
-                  unitRateInstallation: installRate,
-                  unitPrice: effectiveUnitPrice,
-                  amountSupply: supplyAmt,
-                  amountInstallation: installAmt,
-                  totalAmount: totalAmt,
-                  quantity: qty,
-                  unit: (desc.unit || rawMaterialDoc.unit || "nos").toLowerCase(),
-                  uom: (desc.unit || rawMaterialDoc.uom || "nos").toLowerCase(),
-                  isRateOnly,
-                },
-              }
-            );
+            // ── EXISTING raw material: queue the update, don't await yet ──
+            const updatedFields = {
+              category: cleanCategory,
+              unitRateSupply: supplyRate,
+              unitRateInstallation: installRate,
+              unitPrice: effectiveUnitPrice,
+              amountSupply: supplyAmt,
+              amountInstallation: installAmt,
+              totalAmount: totalAmt,
+              quantity: qty,
+              unit: (desc.unit || rawMaterialDoc.unit || "nos").toLowerCase(),
+              uom: (desc.unit || rawMaterialDoc.uom || "nos").toLowerCase(),
+              isRateOnly,
+            };
+            bulkUpdates.push({
+              updateOne: { filter: { _id: rawMaterialDoc._id }, update: { $set: updatedFields } },
+            });
+            // keep the in-memory copy consistent for anything referencing it later in this same request
+            Object.assign(rawMaterialDoc, updatedFields);
           }
 
           resolvedRawMaterialsForParent.push({
@@ -1144,13 +1160,12 @@ export async function POST(req) {
           });
         }
 
-        // ── STEP 2B: Upsert Parent Product (Untouched) ──
+        // ── Parent product: same batching treatment ──
         let productDoc = null;
 
         if (parent.action === "merge" && parent.selectedMasterId) {
           productDoc = existingItems.find((m) => String(m._id) === String(parent.selectedMasterId));
         }
-
         if (!productDoc && productMap.has(normParentKey)) {
           productDoc = productMap.get(normParentKey);
         }
@@ -1158,27 +1173,26 @@ export async function POST(req) {
         const parentGrandTotal = parentSupplyTotal + parentInstallTotal;
 
         if (productDoc) {
-          await Item.updateOne(
-            { _id: productDoc._id },
-            {
-              $set: {
-                category: cleanCategory,
-                rawMaterials: resolvedRawMaterialsForParent,
-                amountSupply: parentSupplyTotal,
-                amountInstallation: parentInstallTotal,
-                totalAmount: parentGrandTotal,
-                unitRateSupply: parentSupplyTotal,
-                unitRateInstallation: parentInstallTotal,
-                unitPrice: parentGrandTotal,
-              },
-            }
-          );
+          const updatedFields = {
+            category: cleanCategory,
+            rawMaterials: resolvedRawMaterialsForParent,
+            amountSupply: parentSupplyTotal,
+            amountInstallation: parentInstallTotal,
+            totalAmount: parentGrandTotal,
+            unitRateSupply: parentSupplyTotal,
+            unitRateInstallation: parentInstallTotal,
+            unitPrice: parentGrandTotal,
+          };
+          bulkUpdates.push({
+            updateOne: { filter: { _id: productDoc._id }, update: { $set: updatedFields } },
+          });
+          Object.assign(productDoc, updatedFields);
         } else {
-          const nextProductCode = await getNextItemCode(targetCompanyId);
-          productDoc = new Item({
+          productDoc = {
+            _id: new mongoose.Types.ObjectId(),
             companyId: targetCompanyId,
             createdBy: user.id,
-            itemCode: nextProductCode,
+            itemCode: nextItemCode(),
             serialNumber: parent.itemSerialNo || "",
             itemName: cleanParentName,
             description: parent.sectionSpecification || cleanParentName,
@@ -1196,9 +1210,8 @@ export async function POST(req) {
             rawMaterials: resolvedRawMaterialsForParent,
             status: "active",
             active: true,
-          });
-
-          await productDoc.save();
+          };
+          newItemDocs.push(productDoc);
           productMap.set(normParentKey, productDoc);
         }
 
@@ -1213,6 +1226,10 @@ export async function POST(req) {
           descriptions: resolvedBOQDescriptions,
         });
       }
+
+      // ── Fire the two bulk DB calls, once, instead of hundreds of small ones ──
+      if (newItemDocs.length) await Item.insertMany(newItemDocs);
+      if (bulkUpdates.length) await Item.bulkWrite(bulkUpdates);
 
       const count = await BOQ.countDocuments({ companyId: targetCompanyId });
       const boqNumber = `BOQ-${String(count + 1).padStart(5, "0")}`;
