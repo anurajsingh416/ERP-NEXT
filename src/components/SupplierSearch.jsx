@@ -131,10 +131,13 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
 import useSearch from "../hooks/useSearch";
+import { createPortal } from "react-dom";
 
 // Prop name ko 'onSelectSupplier' rakha hai taaki main page se match kare
 const SupplierSearch = ({ onSelectSupplier, initialSupplier }) => {
   const wrapperRef = useRef(null);
+
+  const dropdownRef = useRef(null);
 
   const [query, setQuery] = useState(initialSupplier?.supplierName || "");
   const [showDropdown, setShowDropdown] = useState(false);
@@ -174,7 +177,10 @@ const SupplierSearch = ({ onSelectSupplier, initialSupplier }) => {
   /* Click outside dropdown to close */
   useEffect(() => {
     const handleOutside = (e) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
+      if (
+        wrapperRef.current && !wrapperRef.current.contains(e.target) &&
+        dropdownRef.current && !dropdownRef.current.contains(e.target)
+      ) {
         setShowDropdown(false);
       }
     };
@@ -202,11 +208,11 @@ const SupplierSearch = ({ onSelectSupplier, initialSupplier }) => {
     setSelected(sup);
     setQuery(sup.supplierName || "");
     setShowDropdown(false);
-    
+
     // Parent component (Order Form) ko pura supplier object bhejein
     // Taaki Name, Code aur Contact Person fill ho sake
     if (onSelectSupplier) {
-      onSelectSupplier(sup); 
+      onSelectSupplier(sup);
     }
   };
 
@@ -240,43 +246,54 @@ const SupplierSearch = ({ onSelectSupplier, initialSupplier }) => {
         )}
       </div>
 
-      {showDropdown && (
-        <div className="absolute left-0 right-0 mt-1 bg-white shadow-2xl rounded-xl border border-gray-100 max-h-64 overflow-y-auto z-[999]">
-          {supplierSearch.loading && (
-            <div className="p-4 text-center">
-              <div className="animate-spin h-5 w-5 border-2 border-indigo-600 border-t-transparent rounded-full mx-auto"></div>
-            </div>
-          )}
-
-          {!supplierSearch.loading && supplierSearch.results.length === 0 && (
-            <p className="p-4 text-gray-400 text-sm text-center italic">
-              No matching suppliers found
-            </p>
-          )}
-
-          {supplierSearch.results.map((sup) => (
-            <div
-              key={sup._id}
-              onClick={() => handleSelect(sup)}
-              className="p-3 cursor-pointer hover:bg-indigo-50 border-b border-gray-50 last:border-0 transition-colors"
-            >
-              <div className="flex justify-between items-center">
-                <p className="font-bold text-gray-800 text-sm">
-                  {sup.supplierName}
-                </p>
-                <span className="text-[10px] font-mono font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">
-                  {sup.supplierCode}
-                </span>
+      {showDropdown && wrapperRef.current &&
+        createPortal(
+          <div
+            ref={dropdownRef}
+            style={{
+              position: "fixed",
+              top: wrapperRef.current.getBoundingClientRect().bottom + 4,
+              left: wrapperRef.current.getBoundingClientRect().left,
+              width: wrapperRef.current.getBoundingClientRect().width,
+            }}
+            className="z-[9999] bg-white shadow-2xl rounded-xl border border-gray-100 max-h-64 overflow-y-auto"
+          >
+            {supplierSearch.loading && (
+              <div className="p-4 text-center">
+                <div className="animate-spin h-5 w-5 border-2 border-indigo-600 border-t-transparent rounded-full mx-auto"></div>
               </div>
-              {sup.contactPersonName && (
-                <p className="text-[11px] text-gray-400 mt-0.5 flex items-center gap-1">
-                   👤 {sup.contactPersonName}
-                </p>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+            )}
+
+            {!supplierSearch.loading && supplierSearch.results.length === 0 && (
+              <p className="p-4 text-gray-400 text-sm text-center italic">
+                No matching suppliers found
+              </p>
+            )}
+
+            {supplierSearch.results.map((sup) => (
+              <div
+                key={sup._id}
+                onClick={() => handleSelect(sup)}
+                className="p-3 cursor-pointer hover:bg-indigo-50 border-b border-gray-50 last:border-0 transition-colors"
+              >
+                <div className="flex justify-between items-center">
+                  <p className="font-bold text-gray-800 text-sm">
+                    {sup.supplierName}
+                  </p>
+                  <span className="text-[10px] font-mono font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">
+                    {sup.supplierCode}
+                  </span>
+                </div>
+                {sup.contactPersonName && (
+                  <p className="text-[11px] text-gray-400 mt-0.5 flex items-center gap-1">
+                    👤 {sup.contactPersonName}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>,
+          document.body
+        )}
     </div>
   );
 };

@@ -1,0 +1,85 @@
+2. Add Estimated Rate / Estimated Amount columns
+
+Model — src/models/PurchaseRequestModel.js, update PurchaseRequestItemSchema and add a total field + pre-save hook:
+
+javascript
+const PurchaseRequestItemSchema = new mongoose.Schema({
+  itemId: { type: mongoose.Schema.Types.ObjectId, ref: "Item", required: true },
+  itemCode: { type: String, required: true },
+  itemName: { type: String, required: true },
+  uom: { type: String, default: "nos" },
+  quantity: { type: Number, required: true, default: 1 },
+  weight: { type: Number, default: 0 },
+  estimatedRate: { type: Number, default: 0 },
+  estimatedAmount: { type: Number, default: 0 },   // = quantity * estimatedRate, computed server-side
+  requiredBy: { type: Date },
+  remarks: { type: String, default: "" },
+});
+
+Add below the schema definition (mirrors PurchaseIndent's pattern):
+
+javascript
+PurchaseRequestSchema.add({
+  totalEstimatedAmount: { type: Number, default: 0 },
+});
+
+PurchaseRequestSchema.pre("save", function (next) {
+  this.items.forEach((item) => {
+    item.estimatedAmount = (item.quantity || 0) * (item.estimatedRate || 0);
+  });
+  this.totalEstimatedAmount = this.items.reduce((sum, i) => sum + (i.estimatedAmount || 0), 0);
+  next();
+});
+
+API — src/app/api/purchase-request/route.js, in POST, include the new field when mapping items:
+
+javascript
+items: validLines.map((l) => ({
+  ...
+  estimatedRate: Number(l.estimatedRate) || 0,
+})),
+
+(the model's pre("save") computes estimatedAmount/totalEstimatedAmount automatically — no manual calc needed here)
+
+Frontend table — add two columns to the header and each row, right after Quantity:
+
+jsx
+{["No.", "Item Code", "Item Name", "UOM", "Required By", "Quantity *", "Est. Rate", "Est. Amount", "Weight", ""].map(...)}
+jsx
+<td className="px-3 py-2">
+  <input type="number" min="1" className={fi()} value={line.quantity}
+    onChange={(e) => updateLine(idx, "quantity", e.target.value)} />
+</td>
+<td className="px-3 py-2">
+  <input type="number" min="0" className={fi()} value={line.estimatedRate}
+    onChange={(e) => updateLine(idx, "estimatedRate", e.target.value)} placeholder="0" />
+</td>
+<td className="px-3 py-2 text-sm font-mono text-gray-600">
+  ₹{((Number(line.quantity) || 0) * (Number(line.estimatedRate) || 0)).toLocaleString("en-IN")}
+</td>
+3. Financial Summary card
+
+Add a new SectionCard right after the Items card, before Remarks:
+
+jsx
+<SectionCard icon={FaFileAlt} title="Financial Summary" color="indigo">
+  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <ReadField
+      label="Estimated Total"
+      value={`₹${lines.reduce((sum, l) => sum + (Number(l.quantity) || 0) * (Number(l.estimatedRate) || 0), 0).toLocaleString("en-IN")}`}
+    />
+    <div className="flex items-end">
+      <p className="text-xs text-gray-400 italic">
+        Based on estimated rates entered above — final pricing is confirmed at the Vendor Quotation stage.
+      </p>
+    </div>
+  </div>
+</SectionCard>
+Also update handleSave's payload mapping to include estimatedRate:
+javascript
+items: validLines.map((l) => ({
+  itemId: l.itemId, itemCode: l.itemCode, itemName: l.itemName, uom: l.uom,
+  quantity: Number(l.quantity), weight: Number(l.weight) || 0,
+  estimatedRate: Number(l.estimatedRate) || 0,
+  requiredBy: l.requiredBy || undefined,
+})),

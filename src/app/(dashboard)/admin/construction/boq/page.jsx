@@ -1416,6 +1416,7 @@ import {
   FaTrash,
   FaEdit,
   FaTrashAlt,
+  FaBoxes,
 } from "react-icons/fa";
 import { HiDotsVertical } from "react-icons/hi";
 import { toast, ToastContainer } from "react-toastify";
@@ -2453,6 +2454,7 @@ export default function ConstructionBOQPage() {
   const [selectedProjectImport, setSelectedProjectImport] = useState(null);
   const [importFile, setImportFile] = useState(null);
   const [importing, setImporting] = useState(false);
+  const [importErrors, setImportErrors] = useState([]);
   const [boqNumber, setBoqNumber] = useState("");
   const [boqDate, setBoqDate] = useState("");
   const [status, setStatus] = useState("draft");
@@ -2465,6 +2467,7 @@ export default function ConstructionBOQPage() {
   const [analysisData, setAnalysisData] = useState(null);
   const [loadingFinal, setLoadingFinal] = useState(false);
   const [expandedRowIds, setExpandedRowIds] = useState({});
+  const [expandedSubBoqIds, setExpandedSubBoqIds] = useState({});
   const [analysisProgress, setAnalysisProgress] = useState(0);
   const [progressMessage, setProgressMessage] = useState("Initializing AI analysis...");
 
@@ -2475,6 +2478,36 @@ export default function ConstructionBOQPage() {
     setExpandedRowIds((prev) => ({
       ...prev,
       [id]: !prev[id],
+    }));
+  };
+  const toggleSubBoqExpand = (key) => {           // ← add this
+    setExpandedSubBoqIds((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const toggleSubBoqComponentAction = (rowId, dIdx, compIdx) => {
+    setAnalysisData((prev) => ({
+      ...prev,
+      items: prev.items.map((it) => {
+        if (it.id !== rowId) return it;
+        return {
+          ...it,
+          descriptions: it.descriptions.map((d, i) => {
+            if (i !== dIdx) return d;
+            return {
+              ...d,
+              subBoqComponents: (d.subBoqComponents || []).map((c, ci) => {
+                if (ci !== compIdx) return c;
+                const nextAction = c.action === "merge" ? "create_new" : "merge";
+                return {
+                  ...c,
+                  action: nextAction,
+                  selectedMasterId: nextAction === "merge" ? (c.matchedMasterItem?._id || null) : null,
+                };
+              }),
+            };
+          }),
+        };
+      }),
     }));
   };
 
@@ -2729,7 +2762,6 @@ export default function ConstructionBOQPage() {
       toast.error("Please select a project and choose an Excel file.");
       return;
     }
-
     setImporting(true);
     setAnalysisProgress(10);
     setProgressMessage("Parsing Excel rows & checking Item Master...");
@@ -2766,7 +2798,12 @@ export default function ConstructionBOQPage() {
           setAnalysisData(res.data.data);
           setImporting(false);
           setAnalysisProgress(0);
-          toast.info("Excel analyzed. Review item matches below before loading.");
+          const errCount = res.data.data?.validationErrors?.length || 0;
+          if (errCount) {
+            toast.error(`Analysis complete, but ${errCount} validation error${errCount > 1 ? "s" : ""} must be fixed before loading.`);
+          } else {
+            toast.info("Excel analyzed. Review item matches below before loading.");
+          }
         }, 300);
       } else {
         throw new Error(res.data.message || "Failed to analyze Excel.");
@@ -2779,8 +2816,66 @@ export default function ConstructionBOQPage() {
     }
   };
 
+  const handleImport1 = async () => {
+    if (!importFile) {
+      toast.error("Please select an Excel file.");
+      return;
+    }
+
+    setImporting(true);
+    setAnalysisProgress(10);
+    setProgressMessage("Parsing Excel rows & checking Item Master...");
+
+    const progressInterval = setInterval(() => {
+      setAnalysisProgress((prev) => {
+        if (prev >= 90) return prev;
+
+        const next = prev + Math.floor(Math.random() * 8) + 3;
+
+        if (next > 35 && next < 70) {
+          setProgressMessage("Running AI typo correction & fuzzy matching...");
+        }
+
+        if (next >= 70) {
+          setProgressMessage("Preparing review preview...");
+        }
+
+        return next > 90 ? 90 : next;
+      });
+    }, 450);
+
+    try {
+      // Dummy delay — NO API CALL
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+
+      clearInterval(progressInterval);
+
+      setAnalysisProgress(100);
+      setProgressMessage("Analysis complete!");
+
+      setTimeout(() => {
+        setImporting(false);
+        setAnalysisProgress(0);
+
+        toast.info("Demo: Excel analysis completed successfully.");
+      }, 300);
+
+    } catch (err) {
+      clearInterval(progressInterval);
+
+      setImporting(false);
+      setAnalysisProgress(0);
+
+      toast.error("Import analysis failed.");
+    }
+  };
+
   // Step 2: Commit verified items to DB
   const handleFinalLoad = async () => {
+    if (analysisData.validationErrors?.length) {
+      toast.error("Fix the validation errors in the Excel before loading.");
+      return;
+    }
     if (!analysisData || !analysisData.items?.length) return;
     setLoadingFinal(true);
     setFinalLoadProgress(8);
@@ -3202,13 +3297,54 @@ export default function ConstructionBOQPage() {
                     <input
                       type="file"
                       accept=".xlsx,.xls"
-                      onChange={(e) => setImportFile(e.target.files[0])}
+                      onChange={(e) => { setImportFile(e.target.files[0]); }}
                       className="w-full px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 text-sm cursor-pointer"
                     />
                   </div>
+
                 </div>
               ) : (
                 <div className="space-y-4">
+                  {analysisData.validationErrors?.length > 0 && (
+                    <div className="border border-red-200 bg-red-50 rounded-xl overflow-hidden">
+                      <div className="px-3 py-2 bg-red-100 flex items-center justify-between">
+                        <span className="text-red-800 text-xs font-bold uppercase tracking-wider">
+                          {analysisData.validationErrors.length} validation error{analysisData.validationErrors.length > 1 ? "s" : ""}: fix the Excel and re-upload before loading
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => { setAnalysisData(null); setImportFile(null); }}
+                          className="text-[11px] font-bold text-red-700 bg-white border border-red-200 px-2 py-0.5 rounded hover:bg-red-50 cursor-pointer"
+                        >
+                          Upload another file
+                        </button>
+                      </div>
+                      <ul className="divide-y divide-red-100 max-h-48 overflow-y-auto">
+                        {analysisData.validationErrors.map((e, i) => (
+                          <li key={i} className="px-3 py-2 text-xs text-red-900 flex gap-2">
+                            <span className="shrink-0 font-mono text-[10px] font-bold bg-white border border-red-200 text-red-700 px-1.5 py-0.5 rounded h-fit">
+                              {e.sheet} · row {e.rows.join(", ")}
+                            </span>
+                            <span>{e.message}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {analysisData.warnings?.length > 0 && (
+                    <div className="border border-amber-200 bg-amber-50 rounded-xl px-3 py-2 text-xs text-amber-900">
+                      <p className="font-bold uppercase tracking-wider text-[10px] text-amber-700 mb-1">
+                        {analysisData.warnings.length} warning{analysisData.warnings.length > 1 ? "s" : ""} (import can still continue)
+                      </p>
+                      <ul className="list-disc pl-4 space-y-0.5 max-h-24 overflow-y-auto">
+                        {analysisData.warnings.map((w, i) => (
+                          <li key={i}>
+                            <span className="font-mono text-[10px] text-amber-700">{w.sheet} row {w.rows.join(", ")}:</span> {w.message}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   {/* Summary Metric Badges */}
                   <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
                     <div className="flex items-center gap-2">
@@ -3411,6 +3547,7 @@ export default function ConstructionBOQPage() {
                                             <th className="px-2 py-2 text-center w-14">Unit</th>
                                             <th className="px-3 py-2 text-right w-24">Supply Rate</th>
                                             <th className="px-3 py-2 text-center w-36">Item Master Status</th>
+                                            <th className="px-2 py-2 text-center w-20">Sub BOQ</th>
                                           </tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-100">
@@ -3420,117 +3557,252 @@ export default function ConstructionBOQPage() {
                                               desc.matchedDescriptionText || desc.matchedMasterItem?.itemName || "";
 
                                             return (
-                                              <tr key={dIdx} className="hover:bg-indigo-50/20 transition-colors">
-                                                <td className="px-3 py-2 text-center font-mono text-gray-400 align-top">
-                                                  {desc.srNo || `${row.itemSerialNo}.${dIdx + 1}`}
-                                                </td>
+                                              <React.Fragment key={dIdx}>
+                                                <tr key={dIdx} className="hover:bg-indigo-50/20 transition-colors">
+                                                  <td className="px-3 py-2 text-center font-mono text-gray-400 align-top">
+                                                    {desc.srNo || `${row.itemSerialNo}.${dIdx + 1}`}
+                                                  </td>
 
-                                                <td className="px-3 py-2 align-top">
-                                                  {isChanged ? (
-                                                    <div className="space-y-1">
-                                                      <div className="flex items-start gap-1.5 bg-red-50 border border-red-200/80 rounded px-2 py-1 text-red-900 text-xs">
-                                                        <span className="font-mono text-red-500 font-bold select-none text-[11px]">-</span>
-                                                        <span className="line-through opacity-75 leading-relaxed flex-1">
-                                                          {desc.originalDescription}
+                                                  <td className="px-3 py-2 align-top">
+                                                    {isChanged ? (
+                                                      <div className="space-y-1">
+                                                        <div className="flex items-start gap-1.5 bg-red-50 border border-red-200/80 rounded px-2 py-1 text-red-900 text-xs">
+                                                          <span className="font-mono text-red-500 font-bold select-none text-[11px]">-</span>
+                                                          <span className="line-through opacity-75 leading-relaxed flex-1">
+                                                            {desc.originalDescription}
+                                                          </span>
+                                                          <span className="text-[9px] font-bold uppercase text-red-600 bg-red-100 px-1 rounded shrink-0">
+                                                            RAW
+                                                          </span>
+                                                        </div>
+                                                        <div className="flex items-start gap-1.5 bg-emerald-50 border border-emerald-200 rounded px-2 py-1 text-emerald-950 text-xs">
+                                                          <span className="font-mono text-emerald-600 font-bold select-none text-[11px]">+</span>
+                                                          <input
+                                                            type="text"
+                                                            value={desc.description}
+                                                            onChange={(e) => {
+                                                              const val = e.target.value;
+                                                              setAnalysisData((prev) => ({
+                                                                ...prev,
+                                                                items: prev.items.map((it) =>
+                                                                  it.id === row.id
+                                                                    ? {
+                                                                      ...it,
+                                                                      descriptions: it.descriptions.map((d, i) =>
+                                                                        i === dIdx ? { ...d, description: val } : d
+                                                                      ),
+                                                                    }
+                                                                    : it
+                                                                ),
+                                                              }));
+                                                            }}
+                                                            className="bg-transparent border-0 outline-none w-full font-medium text-emerald-950 p-0 text-xs focus:ring-0"
+                                                          />
+                                                          <span className="text-[9px] font-black uppercase text-emerald-700 bg-emerald-100 px-1 py-0.5 rounded shrink-0">
+                                                            ✨ AI
+                                                          </span>
+                                                        </div>
+                                                      </div>
+                                                    ) : (
+                                                      <span className="text-gray-800 font-medium text-xs leading-relaxed">
+                                                        {desc.description}
+                                                      </span>
+                                                    )}
+                                                  </td>
+
+                                                  <td className="px-3 py-2 align-top">
+                                                    {desc.matchedMasterItem ? (
+                                                      <div className="leading-tight">
+                                                        <span
+                                                          className="font-semibold text-xs text-gray-800 block truncate max-w-[210px]"
+                                                          title={displayMatchText}
+                                                        >
+                                                          {displayMatchText}
                                                         </span>
-                                                        <span className="text-[9px] font-bold uppercase text-red-600 bg-red-100 px-1 rounded shrink-0">
-                                                          RAW
+                                                        <span className="text-[10px] text-gray-400 font-mono block mt-0.5">
+                                                          ({desc.matchedMasterItem.itemCode || "NO-CODE"})
                                                         </span>
                                                       </div>
-                                                      <div className="flex items-start gap-1.5 bg-emerald-50 border border-emerald-200 rounded px-2 py-1 text-emerald-950 text-xs">
-                                                        <span className="font-mono text-emerald-600 font-bold select-none text-[11px]">+</span>
-                                                        <input
-                                                          type="text"
-                                                          value={desc.description}
-                                                          onChange={(e) => {
-                                                            const val = e.target.value;
-                                                            setAnalysisData((prev) => ({
-                                                              ...prev,
-                                                              items: prev.items.map((it) =>
-                                                                it.id === row.id
-                                                                  ? {
-                                                                    ...it,
-                                                                    descriptions: it.descriptions.map((d, i) =>
-                                                                      i === dIdx ? { ...d, description: val } : d
-                                                                    ),
-                                                                  }
-                                                                  : it
-                                                              ),
-                                                            }));
-                                                          }}
-                                                          className="bg-transparent border-0 outline-none w-full font-medium text-emerald-950 p-0 text-xs focus:ring-0"
-                                                        />
-                                                        <span className="text-[9px] font-black uppercase text-emerald-700 bg-emerald-100 px-1 py-0.5 rounded shrink-0">
-                                                          ✨ AI
-                                                        </span>
-                                                      </div>
-                                                    </div>
-                                                  ) : (
-                                                    <span className="text-gray-800 font-medium text-xs leading-relaxed">
-                                                      {desc.description}
-                                                    </span>
-                                                  )}
-                                                </td>
+                                                    ) : (
+                                                      <span className="text-gray-400 italic text-[11px]">No match</span>
+                                                    )}
+                                                  </td>
 
-                                                <td className="px-3 py-2 align-top">
-                                                  {desc.matchedMasterItem ? (
-                                                    <div className="leading-tight">
-                                                      <span
-                                                        className="font-semibold text-xs text-gray-800 block truncate max-w-[210px]"
-                                                        title={displayMatchText}
-                                                      >
-                                                        {displayMatchText}
-                                                      </span>
-                                                      <span className="text-[10px] text-gray-400 font-mono block mt-0.5">
-                                                        ({desc.matchedMasterItem.itemCode || "NO-CODE"})
-                                                      </span>
-                                                    </div>
-                                                  ) : (
-                                                    <span className="text-gray-400 italic text-[11px]">No match</span>
-                                                  )}
-                                                </td>
-
-                                                <td className="px-2 py-2 text-center align-top">
-                                                  <span
-                                                    className={`font-black px-1.5 py-0.5 rounded text-[10px] ${desc.matchScore >= 85
-                                                      ? "bg-emerald-100 text-emerald-800"
-                                                      : desc.matchScore >= 50
-                                                        ? "bg-amber-100 text-amber-800"
-                                                        : "bg-gray-100 text-gray-400"
-                                                      }`}
-                                                  >
-                                                    {desc.matchScore}%
-                                                  </span>
-                                                </td>
-
-                                                <td className="px-2 py-2 text-center font-bold text-gray-700 text-xs align-top">
-                                                  {desc.isRateOnly ? "—" : (desc.quantity ?? desc.qty ?? 0)}
-                                                </td>
-
-                                                <td className="px-2 py-2 text-center text-gray-500 uppercase text-xs align-top">
-                                                  {desc.unit || "nos"}
-                                                </td>
-
-                                                <td className="px-3 py-2 text-right font-mono text-gray-600 text-xs align-top">
-                                                  {desc.unitRateSupply ? `₹${desc.unitRateSupply.toLocaleString("en-IN")}` : "—"}
-                                                </td>
-
-                                                <td className="px-3 py-2 text-center align-top">
-                                                  {desc.matchedMasterItem ? (
+                                                  <td className="px-2 py-2 text-center align-top">
                                                     <span
-                                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-700 font-bold text-[10px]"
-                                                      title={`Linked to: ${desc.matchedMasterItem.itemName} (${desc.matchedMasterItem.itemCode || "NO-CODE"})`}
+                                                      className={`font-black px-1.5 py-0.5 rounded text-[10px] ${desc.matchScore >= 85
+                                                        ? "bg-emerald-100 text-emerald-800"
+                                                        : desc.matchScore >= 50
+                                                          ? "bg-amber-100 text-amber-800"
+                                                          : "bg-gray-100 text-gray-400"
+                                                        }`}
                                                     >
-                                                      <FaCheck size={8} className="text-emerald-600" />
-                                                      Already in Master
+                                                      {desc.matchScore}%
                                                     </span>
-                                                  ) : (
-                                                    <span className="inline-flex items-center px-2 py-0.5 rounded bg-blue-50 border border-blue-200 text-blue-700 font-bold text-[10px]">
-                                                      New BOQ Item
-                                                    </span>
-                                                  )}
-                                                </td>
-                                              </tr>
+                                                  </td>
+
+                                                  <td className="px-2 py-2 text-center font-bold text-gray-700 text-xs align-top">
+                                                    {desc.isRateOnly ? "—" : (desc.quantity ?? desc.qty ?? 0)}
+                                                  </td>
+
+                                                  <td className="px-2 py-2 text-center text-gray-500 uppercase text-xs align-top">
+                                                    {desc.unit || "nos"}
+                                                  </td>
+
+                                                  <td className="px-3 py-2 text-right font-mono text-gray-600 text-xs align-top">
+                                                    {desc.unitRateSupply ? `₹${desc.unitRateSupply.toLocaleString("en-IN")}` : "—"}
+                                                  </td>
+
+                                                  <td className="px-3 py-2 text-center align-top">
+                                                    {desc.matchedMasterItem ? (
+                                                      <span
+                                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-700 font-bold text-[10px]"
+                                                        title={`Linked to: ${desc.matchedMasterItem.itemName} (${desc.matchedMasterItem.itemCode || "NO-CODE"})`}
+                                                      >
+                                                        <FaCheck size={8} className="text-emerald-600" />
+                                                        Already in Master
+                                                      </span>
+                                                    ) : (
+                                                      <span className="inline-flex items-center px-2 py-0.5 rounded bg-blue-50 border border-blue-200 text-blue-700 font-bold text-[10px]">
+                                                        New BOQ Item
+                                                      </span>
+                                                    )}
+                                                  </td>
+                                                  {/* ── Sub BOQ toggle cell ── */}
+                                                  <td className="px-2 py-2 text-center align-top">
+                                                    {desc.subBoqComponents && desc.subBoqComponents.length > 0 ? (
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => toggleSubBoqExpand(`${row.id}-${dIdx}`)}
+                                                        className="flex items-center gap-1 mx-auto text-[10px] font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded transition-colors cursor-pointer"
+                                                      >
+                                                        <FaBoxes size={9} />
+                                                        {desc.subBoqComponents.length}
+                                                      </button>
+                                                    ) : (
+                                                      <span className="text-gray-300 text-[10px]">—</span>
+                                                    )}
+                                                  </td>
+                                                </tr>
+                                                {/* ── NEW: nested Sub BOQ review row ── */}
+                                                {
+                                                  expandedSubBoqIds[`${row.id}-${dIdx}`] && desc.subBoqComponents?.length > 0 && (
+                                                    <tr className="bg-amber-50/30 border-b border-amber-100">
+                                                      <td colSpan={9} className="px-6 py-3">
+                                                        <div className="border border-amber-200 rounded-xl overflow-hidden bg-white shadow-sm">
+                                                          <div className="px-3 py-2 bg-amber-100/60 border-b border-amber-200 text-[10px] font-bold uppercase tracking-wider text-amber-800 flex items-center gap-1.5">
+                                                            <FaBoxes size={10} />
+                                                            Sub BOQ — Sub-Assemblies &amp; Raw Materials for {desc.srNo || `${row.itemSerialNo}.${dIdx + 1}`}
+                                                          </div>
+                                                          <table className="w-full text-[11px]">
+                                                            <thead className="bg-gray-50 text-[9px] font-bold uppercase text-gray-500 border-b border-gray-200">
+                                                              <tr>
+                                                                <th className="px-2 py-1.5 text-left">Parent Link</th>
+                                                                <th className="px-2 py-1.5 text-left">Component Code</th>
+                                                                <th className="px-2 py-1.5 text-left">Type</th>
+                                                                <th className="px-2 py-1.5 text-left">Description</th>
+                                                                <th className="px-2 py-1.5 text-right">UOM</th>
+                                                                <th className="px-2 py-1.5 text-right">Qty/Unit</th>
+                                                                <th className="px-2 py-1.5 text-right">Cost Rate</th>
+                                                                <th className="px-2 py-1.5 text-left">Master Match</th>
+                                                                <th className="px-2 py-1.5 text-center">Score</th>
+                                                                <th className="px-2 py-1.5 text-center">Status</th>
+                                                              </tr>
+                                                            </thead>
+                                                            <tbody className="divide-y divide-gray-100">
+                                                              {desc.subBoqComponents.map((comp, compIdx) => {
+                                                                const isSubAssembly = comp.classification === "Sub-Assembly (FG)";
+                                                                return (
+                                                                  <tr key={compIdx} className={isSubAssembly ? "bg-yellow-50/60" : ""}>
+                                                                    <td className="px-2 py-1.5 font-mono text-blue-700">{comp.parentLink}</td>
+                                                                    <td className="px-2 py-1.5 font-mono">
+                                                                      <span
+                                                                        className={
+                                                                          isSubAssembly
+                                                                            ? "px-1.5 py-0.5 rounded border border-amber-400 bg-amber-100 text-amber-800"
+                                                                            : "px-1.5 py-0.5 rounded border border-gray-300 bg-gray-100 text-gray-700"
+                                                                        }
+                                                                      >
+                                                                        {comp.componentCode}
+                                                                      </span>
+                                                                    </td>
+                                                                    <td className="px-2 py-1.5">
+                                                                      {isSubAssembly ? (
+                                                                        <span className="font-bold text-amber-700">Sub-Assembly (FG)</span>
+                                                                      ) : (
+                                                                        <span className="text-gray-500">Raw Material</span>
+                                                                      )}
+                                                                    </td>
+                                                                    <td className="px-2 py-1.5 text-gray-800">{comp.description}</td>
+                                                                    <td className="px-2 py-1.5 text-right text-gray-500 uppercase">{comp.uom}</td>
+                                                                    <td className="px-2 py-1.5 text-right font-semibold text-gray-700">{comp.qtyPerUnit}</td>
+                                                                    <td className="px-2 py-1.5 text-right font-mono text-gray-600">
+                                                                      {comp.costRate ? `₹${comp.costRate.toLocaleString("en-IN")}` : "—"}
+                                                                    </td>
+                                                                    <td className="px-2 py-1.5">
+                                                                      {comp.matchedMasterItem ? (
+                                                                        <div className="leading-tight">
+                                                                          <span
+                                                                            className="font-semibold text-gray-800 block truncate max-w-[160px]"
+                                                                            title={comp.matchedMasterItem.itemName}
+                                                                          >
+                                                                            {comp.matchedMasterItem.itemName}
+                                                                          </span>
+                                                                          <span className="text-[9px] text-gray-400 font-mono block">
+                                                                            ({comp.matchedMasterItem.itemCode || "NO-CODE"})
+                                                                          </span>
+                                                                        </div>
+                                                                      ) : (
+                                                                        <span className="text-gray-400 italic">No match</span>
+                                                                      )}
+                                                                    </td>
+                                                                    <td className="px-2 py-1.5 text-center">
+                                                                      <span
+                                                                        className={`font-black px-1.5 py-0.5 rounded text-[10px] ${comp.matchScore >= 85
+                                                                          ? "bg-emerald-100 text-emerald-800"
+                                                                          : comp.matchScore >= 50
+                                                                            ? "bg-amber-100 text-amber-800"
+                                                                            : "bg-gray-100 text-gray-400"
+                                                                          }`}
+                                                                      >
+                                                                        {comp.matchScore || 0}%
+                                                                      </span>
+                                                                    </td>
+                                                                    <td className="px-2 py-1.5 text-center">
+                                                                      <button
+                                                                        type="button"
+                                                                        onClick={() => toggleSubBoqComponentAction(row.id, dIdx, compIdx)}
+                                                                        disabled={!comp.matchedMasterItem}
+                                                                        title={
+                                                                          comp.matchedMasterItem
+                                                                            ? "Click to toggle between using the matched item and creating a new one"
+                                                                            : "No match found — will always create new"
+                                                                        }
+                                                                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded font-bold text-[10px] border transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${comp.action === "merge"
+                                                                          ? "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100"
+                                                                          : "bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100"
+                                                                          }`}
+                                                                      >
+                                                                        {comp.action === "merge" ? (
+                                                                          <>
+                                                                            <FaCheck size={8} /> Use Match
+                                                                          </>
+                                                                        ) : (
+                                                                          "Create New"
+                                                                        )}
+                                                                      </button>
+                                                                    </td>
+                                                                  </tr>
+                                                                );
+                                                              })}
+                                                            </tbody>
+                                                          </table>
+                                                        </div>
+                                                      </td>
+                                                    </tr>
+                                                  )
+                                                }
+                                              </React.Fragment>
                                             );
                                           })}
                                         </tbody>
@@ -3617,7 +3889,8 @@ export default function ConstructionBOQPage() {
                   ) : (
                     <button
                       onClick={handleFinalLoad}
-                      className="flex items-center gap-2.5 px-6 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 cursor-pointer"
+                      disabled={(analysisData.validationErrors?.length || 0) > 0}
+                      className="flex items-center gap-2.5 px-6 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <FaCheck size={12} />
                       <span>Load Data into BOQ</span>

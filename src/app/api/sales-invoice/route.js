@@ -27,6 +27,162 @@ cloudinary.config({
 const { Types } = mongoose;
 
 // --------------------------------------------------------------
+// Deduct stock for a BOQ-generated invoice, spread across whichever
+// inventory records (bins/variants) of that item+warehouse have stock.
+// Mirrors validateBoqStock's grouping so what was validated is what
+// gets deducted.
+// --------------------------------------------------------------
+async function deductBoqStock(items, invoiceId, invoiceNumber, decoded, session) {
+  const required = new Map();
+  for (const line of items || []) {
+    if (line.boqLineType !== "Supply" && line.boqLineType !== "Supply+Install") continue;
+    const itemId = line.item?._id || line.item;
+    const warehouseId = line.warehouse?._id || line.warehouse;
+    if (!Types.ObjectId.isValid(itemId) || !Types.ObjectId.isValid(warehouseId)) continue;
+
+    const key = `${itemId}_${warehouseId}`;
+    const entry = required.get(key) || { itemId, warehouseId, qty: 0, name: line.itemName };
+    entry.qty += Number(line.quantity) || 0;
+    required.set(key, entry);
+  }
+  console.log("BOQ deduct required map:", [...required.values()]);
+  for (const { itemId, warehouseId, qty, name } of required.values()) {
+    if (qty <= 0) continue;
+
+    const itemDoc = await Item.findById(itemId).select("itemType").session(session);
+    if (itemDoc?.itemType === "Service") continue; // nothing physical to deduct
+
+    let remaining = qty;
+    const invDocs = await Inventory.find({
+      companyId: new Types.ObjectId(decoded.companyId),
+      item: new Types.ObjectId(itemId),
+      warehouse: new Types.ObjectId(warehouseId),
+    }).session(session);
+
+    for (const inv of invDocs) {
+      if (remaining <= 0) break;
+
+      // deduct from base quantity first
+      if (inv.quantity > 0) {
+        const take = Math.min(inv.quantity, remaining);
+        if (take > 0) {
+          inv.quantity -= take;
+          remaining -= take;
+          await StockMovement.create([{
+            companyId: decoded.companyId,
+            createdBy: decoded.id,
+            item: new Types.ObjectId(itemId),
+            variantId: null,
+            warehouse: new Types.ObjectId(warehouseId),
+            bin: inv.bin || null,
+            movementType: "OUT",
+            quantity: take,
+            reference: invoiceId,
+            referenceType: "SalesInvoice",
+            documentNumber: invoiceNumber,
+            remarks: "BOQ Invoice - stock deduction",
+            date: new Date(),
+          }], { session });
+        }
+      }
+
+      // then variant lots, if still short
+      if (remaining > 0 && inv.variantInventory?.length) {
+        for (const v of inv.variantInventory) {
+          if (remaining <= 0) break;
+          const take = Math.min(v.quantity || 0, remaining);
+          if (take > 0) {
+            v.quantity -= take;
+            remaining -= take;
+            await StockMovement.create([{
+              companyId: decoded.companyId,
+              createdBy: decoded.id,
+              item: new Types.ObjectId(itemId),
+              variantId: v.variantId,
+              warehouse: new Types.ObjectId(warehouseId),
+              bin: inv.bin || null,
+              movementType: "OUT",
+              quantity: take,
+              reference: invoiceId,
+              referenceType: "SalesInvoice",
+              documentNumber: invoiceNumber,
+              remarks: "BOQ Invoice - stock deduction (variant)",
+              date: new Date(),
+            }], { session });
+          }
+        }
+      }
+
+      await inv.save({ session });
+    }
+    console.log(
+      `BOQ deduct: item=${itemId} warehouse=${warehouseId} qty=${qty} foundInvDocs=${invDocs.length}`,
+      invDocs.map(d => ({ id: d._id.toString(), quantity: d.quantity, bin: d.bin }))
+    );
+    console.log(`BOQ deduct result: item=${itemId} remaining=${remaining}`);
+    // Shouldn't happen since validateBoqStock already checked, but guard anyway
+    if (remaining > 0) {
+      throw new Error(`Insufficient stock for ${name} during deduction — please retry.`);
+    }
+  }
+}
+
+// --------------------------------------------------------------
+// Restore stock deducted for a BOQ invoice, by replaying the
+// StockMovement "OUT" records that deductBoqStock created for it.
+// --------------------------------------------------------------
+async function restoreBoqStock(invoice, decoded, session) {
+  const movements = await StockMovement.find({
+    reference: invoice._id,
+    referenceType: "SalesInvoice",
+    movementType: "OUT",
+  }).session(session);
+
+  for (const mv of movements) {
+    const query = {
+      companyId: decoded.companyId,
+      item: mv.item,
+      warehouse: mv.warehouse,
+    };
+    query.bin = mv.bin ? mv.bin : { $in: [null, undefined] };
+
+    const inv = await Inventory.findOne(query).session(session);
+    if (!inv) continue;
+
+    if (mv.variantId) {
+      const v = inv.variantInventory.find(x => x.variantId.toString() === mv.variantId.toString());
+      if (v) v.quantity += mv.quantity;
+    } else {
+      inv.quantity += mv.quantity;
+    }
+    //temp
+    inv.markModified('variantInventory');
+    //temp
+    await inv.save({ session });
+    //temp
+    const check = await Inventory.findById(inv._id).session(session).lean();
+    console.log("Post-save check:", { id: inv._id.toString(), quantity: check.quantity, variantInventory: check.variantInventory });
+    //temp
+    await StockMovement.create([{
+      companyId: decoded.companyId,
+      createdBy: decoded.id,
+      item: mv.item,
+      variantId: mv.variantId || null,
+      warehouse: mv.warehouse,
+      bin: mv.bin || null,
+      movementType: "IN",
+      quantity: mv.quantity,
+      reference: invoice._id,
+      referenceType: "SalesInvoice",
+      documentNumber: invoice.invoiceNumber,
+      remarks: "BOQ Invoice cancelled - stock restored",
+      date: new Date(),
+    }], { session });
+  }
+}
+
+
+// --------------------------------------------------------------
 // Helper: parse multipart form data
 // --------------------------------------------------------------
 async function parseMultipart(req) {
@@ -92,6 +248,77 @@ async function validateStockAvailability(items, companyId) {
         `Required: ${item.quantity}, Available: ${available}.`
       );
     }
+  }
+}
+
+// --------------------------------------------------------------
+// Validate physical stock for invoices raised from a BOQ.
+// BOQ lines carry no bin / variant, so stock is summed across every
+// bin of the chosen warehouse. Only "Supply" lines are checked
+// ("Installation" lines are labour for the same item and consume no
+// stock) and Service items are skipped. Every shortage is collected
+// and reported together so the user can fix them in one go.
+// --------------------------------------------------------------
+async function validateBoqStock(items, companyId) {
+  const required = new Map();
+
+  for (const line of items || []) {
+    if (line.boqLineType !== "Supply" && line.boqLineType !== "Supply+Install") continue;
+    const itemId = line.item?._id || line.item;
+    const warehouseId = line.warehouse?._id || line.warehouse;
+    if (!Types.ObjectId.isValid(itemId) || !Types.ObjectId.isValid(warehouseId)) continue;
+
+    const key = `${itemId}_${warehouseId}`;
+    const entry = required.get(key) || { itemId, warehouseId, qty: 0, name: line.itemName };
+    entry.qty += Number(line.quantity) || 0;
+    required.set(key, entry);
+  }
+
+  const shortages = [];
+  for (const { itemId, warehouseId, qty, name } of required.values()) {
+    if (qty <= 0) continue;
+
+    const [itemDoc, warehouseDoc, invDocs] = await Promise.all([
+      Item.findById(itemId).select("itemName itemCode itemType").lean(),
+      Warehouse.findById(warehouseId).select("warehouseName").lean(),
+      Inventory.find({
+        companyId: new Types.ObjectId(companyId),
+        item: new Types.ObjectId(itemId),
+        warehouse: new Types.ObjectId(warehouseId),
+      }).select("quantity variantInventory").lean(),
+    ]);
+
+    if (itemDoc?.itemType === "Service") continue; // nothing physical to check
+
+    const available = invDocs.reduce(
+      (sum, d) =>
+        sum +
+        (Number(d.quantity) || 0) +
+        (d.variantInventory || []).reduce((s, v) => s + (Number(v.quantity) || 0), 0),
+      0
+    );
+
+    if (available < qty) {
+      shortages.push({
+        itemName: itemDoc?.itemName || String(name || "").replace(/\s*\(Supply\)$/, ""),
+        itemCode: itemDoc?.itemCode || "",
+        warehouseName: warehouseDoc?.warehouseName || "selected warehouse",
+        required: qty,
+        available,
+      });
+    }
+  }
+
+  if (shortages.length > 0) {
+    const detail = shortages
+      .map(
+        (s) =>
+          `${s.itemName}${s.itemCode ? ` (${s.itemCode})` : ""}: required ${s.required}, available ${s.available} in ${s.warehouseName}`
+      )
+      .join("; ");
+    const err = new Error(`Insufficient stock - invoice not generated. ${detail}`);
+    err.shortages = shortages;
+    throw err;
   }
 }
 
@@ -241,11 +468,11 @@ async function updateSalesOrderOnInvoice(salesOrderId, items, session, isAdding 
       const change = isAdding ? invItem.quantity : -invItem.quantity;
       soItem.invoicedQuantity = (soItem.invoicedQuantity || 0) + change;
       soItem.invoicedQuantity = Math.max(0, soItem.invoicedQuantity);
-      
+
       const remainingToInvoice = (soItem.quantity || 0) - soItem.invoicedQuantity;
       if (remainingToInvoice > 0) allInvoiced = false;
       if (soItem.invoicedQuantity > 0) anyInvoiced = true;
-      
+
       console.log(`SO item ${soItem.itemCode}: invoiced=${soItem.invoicedQuantity}, remaining=${remainingToInvoice}`);
     }
   }
@@ -260,7 +487,7 @@ async function updateSalesOrderOnInvoice(salesOrderId, items, session, isAdding 
     if (salesOrder.status === "Fully Invoiced") salesOrder.status = "Partially Invoiced";
     else if (salesOrder.status === "Partially Invoiced") salesOrder.status = "Open";
   }
-  
+
   await salesOrder.save({ session });
 }
 
@@ -283,7 +510,7 @@ export async function POST(req) {
     const isFromDelivery = sourceModel === 'delivery';
     const isCopiedSO = sourceModel === 'salesorder';
 
-    console.log(`📌 Source: "${sourceModel}" → isFromDelivery: ${isFromDelivery}, isCopiedSO: ${isCopiedSO}`);
+    console.log(`📌 Source: "${sourceModel}" → isFromDelivery: ${isFromDelivery}, isCopiedSO: ${isCopiedSO} isBoqInvoice: ${invoiceData.isBoqInvoice}, ${typeof invoiceData.isBoqInvoice}`);
 
     // Clean payments
     if (invoiceData.payments && Array.isArray(invoiceData.payments)) {
@@ -319,6 +546,10 @@ export async function POST(req) {
     // Stock validation (skip only for delivery copies)
     if (!isFromDelivery) {
       await validateStockAvailability(invoiceData.items, decoded.companyId);
+    } else if (invoiceData.isBoqInvoice) {
+      // BOQ invoices are sent as "delivery" (no stock deduction), but the
+      // material must still exist in the selected warehouse.
+      await validateBoqStock(invoiceData.items, decoded.companyId);
     }
 
     // Upload attachments
@@ -373,17 +604,16 @@ export async function POST(req) {
       // ===== ✅ CORRECTED: Stock and Sales Order updates =====
       // Only skip stock updates if invoice came from a Delivery Challan
       if (!isFromDelivery) {
-        // 1. Reduce physical stock (and committed if from Sales Order)
         for (const item of invoiceData.items) {
           await processItemForInvoice(item, invoice._id, invoice.invoiceNumber, decoded, session, isCopiedSO);
         }
-
-        // 2. If invoice is from a Sales Order, update its invoiced quantities & status
         if (isCopiedSO && invoiceData.salesOrderId) {
           await updateSalesOrderOnInvoice(invoiceData.salesOrderId, invoiceData.items, session, true);
           invoice.sourceId = invoiceData.salesOrderId;
           await invoice.save({ session });
         }
+      } else if (invoiceData.isBoqInvoice) {
+        await deductBoqStock(invoiceData.items, invoice._id, invoice.invoiceNumber, decoded, session);
       }
     });
 
@@ -441,7 +671,10 @@ export async function POST(req) {
   } catch (error) {
     console.error("POST invoice error:", error);
     const status = error.message.toLowerCase().includes("stock") ? 422 : 500;
-    return NextResponse.json({ success: false, error: error.message }, { status });
+    return NextResponse.json(
+      { success: false, error: error.message, ...(error.shortages ? { shortages: error.shortages } : {}) },
+      { status }
+    );
   }
 }
 
@@ -489,7 +722,7 @@ export async function GET(req) {
         .populate("items.item", "itemCode itemName")
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(limit)
+        // .limit(limit)
         .lean(),
       SalesInvoice.countDocuments(query),
     ]);
@@ -614,6 +847,8 @@ export async function DELETE(req) {
     // Restore stock (if any was deducted)
     if (invoice.sourceModel !== 'delivery') {
       await restoreStockForInvoice(invoice, decoded, session);
+    } else if (invoice.isBoqInvoice) {
+      await restoreBoqStock(invoice, decoded, session);
     }
 
     // Revert Sales Order invoiced quantities and status
@@ -1423,4 +1658,3 @@ export async function DELETE(req) {
 //     );
 //   }
 // }
-

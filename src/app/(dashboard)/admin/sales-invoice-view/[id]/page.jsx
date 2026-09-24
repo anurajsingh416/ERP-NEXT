@@ -322,7 +322,1803 @@ export default function SalesInvoiceDetail() {
   );
 }
 
+// "use client";
 
+// import Link from "next/link";
+// import axios from "axios";
+// import { useParams, useRouter } from "next/navigation";
+// import { useEffect, useRef, useState } from "react";
+
+// import {
+//   FaArrowLeft,
+//   FaEdit,
+//   FaUser,
+//   FaCalendarAlt,
+//   FaBoxOpen,
+//   FaCalculator,
+//   FaPaperclip,
+//   FaMapMarkerAlt,
+//   FaDownload,
+// } from "react-icons/fa";
+
+// import html2pdf from "html2pdf.js";
+
+// export default function SalesInvoiceDetail() {
+//   const { id } = useParams();
+//   const router = useRouter();
+
+//   const [invoice, setInvoice] = useState(null);
+//   const [error, setError] = useState(null);
+//   const [loading, setLoading] = useState(true);
+//   const [downloading, setDownloading] = useState(false);
+
+//   // PDF template reference
+//   const pdfRef = useRef(null);
+
+//   useEffect(() => {
+//     if (!id) return;
+
+//     const fetchInvoice = async () => {
+//       try {
+//         setLoading(true);
+
+//         const token = localStorage.getItem("token");
+
+//         const res = await axios.get(`/api/sales-invoice/${id}`, {
+//           headers: {
+//             Authorization: `Bearer ${token}`,
+//           },
+//         });
+
+//         if (res.data?.data) {
+//           setInvoice(res.data.data);
+//         } else {
+//           setError("Invoice not found");
+//         }
+//       } catch (err) {
+//         console.error(err);
+//         setError("Failed to fetch invoice");
+//       } finally {
+//         setLoading(false);
+//       }
+//     };
+
+//     fetchInvoice();
+//   }, [id]);
+
+//   const formatCurrency = (value) =>
+//     new Intl.NumberFormat("en-IN", {
+//       style: "currency",
+//       currency: "INR",
+//       minimumFractionDigits: 2,
+//     }).format(value || 0);
+
+//   const formatDate = (d) =>
+//     d
+//       ? new Date(d).toLocaleDateString("en-GB", {
+//           day: "2-digit",
+//           month: "short",
+//           year: "numeric",
+//         })
+//       : "—";
+
+//   const numberToWords = (num) => {
+//     if (!num || isNaN(num)) return "Zero Only";
+
+//     const ones = [
+//       "",
+//       "One",
+//       "Two",
+//       "Three",
+//       "Four",
+//       "Five",
+//       "Six",
+//       "Seven",
+//       "Eight",
+//       "Nine",
+//       "Ten",
+//       "Eleven",
+//       "Twelve",
+//       "Thirteen",
+//       "Fourteen",
+//       "Fifteen",
+//       "Sixteen",
+//       "Seventeen",
+//       "Eighteen",
+//       "Nineteen",
+//     ];
+
+//     const tens = [
+//       "",
+//       "",
+//       "Twenty",
+//       "Thirty",
+//       "Forty",
+//       "Fifty",
+//       "Sixty",
+//       "Seventy",
+//       "Eighty",
+//       "Ninety",
+//     ];
+
+//     const convertBelowThousand = (n) => {
+//       let result = "";
+
+//       if (n >= 100) {
+//         result += ones[Math.floor(n / 100)] + " Hundred ";
+//         n %= 100;
+//       }
+
+//       if (n >= 20) {
+//         result += tens[Math.floor(n / 10)] + " ";
+//         n %= 10;
+//       }
+
+//       if (n > 0) {
+//         result += ones[n] + " ";
+//       }
+
+//       return result.trim();
+//     };
+
+//     let amount = Math.floor(Number(num));
+
+//     if (amount === 0) return "Zero Only";
+
+//     let result = "";
+
+//     const crore = Math.floor(amount / 10000000);
+//     amount %= 10000000;
+
+//     const lakh = Math.floor(amount / 100000);
+//     amount %= 100000;
+
+//     const thousand = Math.floor(amount / 1000);
+//     amount %= 1000;
+
+//     if (crore) {
+//       result += convertBelowThousand(crore) + " Crore ";
+//     }
+
+//     if (lakh) {
+//       result += convertBelowThousand(lakh) + " Lakh ";
+//     }
+
+//     if (thousand) {
+//       result += convertBelowThousand(thousand) + " Thousand ";
+//     }
+
+//     if (amount) {
+//       result += convertBelowThousand(amount);
+//     }
+
+//     return `Rupees ${result.trim()} Only`;
+//   };
+
+//   const StatusBadge = ({ status }) => {
+//     const map = {
+//       Paid: "bg-emerald-50 text-emerald-700 border-emerald-200",
+//       Closed: "bg-emerald-50 text-emerald-700 border-emerald-200",
+//       Pending: "bg-amber-50 text-amber-700 border-amber-200",
+//       Open: "bg-blue-50 text-blue-700 border-blue-200",
+//       Cancelled: "bg-red-50 text-red-700 border-red-200",
+//     };
+
+//     return (
+//       <span
+//         className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border ${
+//           map[status] ||
+//           "bg-gray-100 text-gray-600 border-gray-200"
+//         }`}
+//       >
+//         {status || "—"}
+//       </span>
+//     );
+//   };
+
+//   const SectionCard = ({
+//     icon: Icon,
+//     title,
+//     children,
+//     color = "indigo",
+//   }) => (
+//     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-5">
+//       <div
+//         className={`flex items-center gap-3 px-6 py-4 border-b border-gray-100 bg-${color}-50/40`}
+//       >
+//         <div
+//           className={`w-8 h-8 rounded-lg bg-${color}-100 flex items-center justify-center text-${color}-500`}
+//         >
+//           <Icon className="text-sm" />
+//         </div>
+
+//         <p className="text-sm font-bold text-gray-900">{title}</p>
+//       </div>
+
+//       <div className="px-6 py-5">{children}</div>
+//     </div>
+//   );
+
+//   const InfoRow = ({ label, value }) => (
+//     <div className="flex flex-col gap-0.5">
+//       <span className="text-[10.5px] font-bold uppercase tracking-wider text-gray-400">
+//         {label}
+//       </span>
+
+//       <span className="text-sm font-semibold text-gray-800">
+//         {value || "—"}
+//       </span>
+//     </div>
+//   );
+
+//   // ---------------------------------------------------------
+//   // DOWNLOAD PDF
+//   // ---------------------------------------------------------
+
+//   const downloadPDF = async () => {
+//     if (!invoice || !pdfRef.current) return;
+
+//     try {
+//       setDownloading(true);
+
+//       // Allow React/browser to finish rendering the PDF template
+//       await new Promise((resolve) => setTimeout(resolve, 300));
+
+//       const element = pdfRef.current;
+
+//       const invoiceNumber =
+//         invoice.documentNumber || `invoice-${invoice._id}`;
+
+//       const options = {
+//         margin: [8, 8, 8, 8],
+
+//         filename: `Sales-Invoice-${invoiceNumber}.pdf`,
+
+//         image: {
+//           type: "jpeg",
+//           quality: 0.98,
+//         },
+
+//         html2canvas: {
+//           scale: 2,
+//           useCORS: true,
+//           allowTaint: true,
+//           backgroundColor: "#ffffff",
+//           logging: false,
+//         },
+
+//         jsPDF: {
+//           unit: "mm",
+//           format: "a4",
+//           orientation: "portrait",
+//         },
+
+//         pagebreak: {
+//           mode: ["css", "legacy"],
+//         },
+//       };
+
+//       await html2pdf()
+//         .set(options)
+//         .from(element)
+//         .save();
+//     } catch (err) {
+//       console.error("PDF download failed:", err);
+//       alert("Failed to generate PDF. Please try again.");
+//     } finally {
+//       setDownloading(false);
+//     }
+//   };
+
+//   // ---------------------------------------------------------
+//   // LOADING
+//   // ---------------------------------------------------------
+
+//   if (loading) {
+//     return (
+//       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+//         <div className="text-center">
+//           <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mx-auto mb-3" />
+
+//           <p className="text-sm text-gray-400">
+//             Loading invoice...
+//           </p>
+//         </div>
+//       </div>
+//     );
+//   }
+
+//   // ---------------------------------------------------------
+//   // ERROR
+//   // ---------------------------------------------------------
+
+//   if (error) {
+//     return (
+//       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+//         <div className="text-center">
+//           <p className="text-red-500 font-semibold">{error}</p>
+
+//           <button
+//             onClick={() =>
+//               router.push("/admin/sales-invoice-view")
+//             }
+//             className="mt-4 text-indigo-600 text-sm hover:underline"
+//           >
+//             ← Back to invoices
+//           </button>
+//         </div>
+//       </div>
+//     );
+//   }
+
+//   if (!invoice) return null;
+
+//   const items = invoice.items || [];
+
+//   // ---------------------------------------------------------
+//   // PDF VALUES
+//   // ---------------------------------------------------------
+
+//   const grandTotal = Number(invoice.grandTotal || 0);
+
+//   const taxableAmount =
+//     Number(invoice.totalBeforeDiscount || 0) -
+//     Number(invoice.discount || 0);
+
+//   const gstTotal = Number(invoice.gstTotal || 0);
+
+//   const freight = Number(invoice.freight || 0);
+
+//   const rounding = Number(invoice.rounding || 0);
+
+//   const openBalance = Number(invoice.openBalance || 0);
+
+//   // ---------------------------------------------------------
+//   // PAGE
+//   // ---------------------------------------------------------
+
+//   return (
+//     <>
+//       {/* =====================================================
+//           NORMAL WEB PAGE
+//       ===================================================== */}
+
+//       <div className="min-h-screen bg-gray-50">
+//         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
+
+//           {/* Header */}
+
+//           <button
+//             onClick={() =>
+//               router.push("/admin/sales-invoice-view")
+//             }
+//             className="flex items-center gap-1.5 text-indigo-600 font-semibold text-sm mb-4 hover:text-indigo-800 transition-colors"
+//           >
+//             <FaArrowLeft className="text-xs" />
+
+//             Back to Invoices
+//           </button>
+
+//           <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+//             <div>
+//               <div className="flex items-center gap-3 mb-1">
+//                 <h1 className="text-2xl font-extrabold tracking-tight text-gray-900">
+//                   Sales Invoice
+//                 </h1>
+
+//                 <StatusBadge status={invoice.status} />
+//               </div>
+
+//               <p className="text-sm text-gray-400">
+//                 <span className="font-mono font-bold text-indigo-600">
+//                   {invoice.documentNumber || "—"}
+//                 </span>
+
+//                 {" · "}
+
+//                 Created{" "}
+//                 {formatDate(
+//                   invoice.createdAt || invoice.invoiceDate
+//                 )}
+//               </p>
+//             </div>
+
+//             <div className="flex items-center gap-2">
+
+//               {/* DOWNLOAD PDF */}
+
+//               <button
+//                 onClick={downloadPDF}
+//                 disabled={downloading}
+//                 className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 transition-all shadow-sm shadow-emerald-200 disabled:opacity-60 disabled:cursor-not-allowed"
+//               >
+//                 <FaDownload className="text-xs" />
+
+//                 {downloading
+//                   ? "Generating PDF..."
+//                   : "Download PDF"}
+//               </button>
+
+//               {/* EDIT */}
+
+//               <button
+//                 onClick={() =>
+//                   router.push(
+//                     `/admin/sales-invoice-view/new?editId=${invoice._id}`
+//                   )
+//                 }
+//                 className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 transition-all shadow-sm shadow-indigo-200"
+//               >
+//                 <FaEdit className="text-xs" />
+
+//                 Edit Invoice
+//               </button>
+//             </div>
+//           </div>
+
+//           {/* Customer Information */}
+
+//           <SectionCard
+//             icon={FaUser}
+//             title="Customer Information"
+//             color="indigo"
+//           >
+//             <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
+//               <InfoRow
+//                 label="Customer Code"
+//                 value={invoice.customerCode}
+//               />
+
+//               <InfoRow
+//                 label="Customer Name"
+//                 value={invoice.customerName}
+//               />
+
+//               <InfoRow
+//                 label="Contact Person"
+//                 value={invoice.contactPerson}
+//               />
+
+//               <InfoRow
+//                 label="Sales Employee"
+//                 value={invoice.salesEmployee}
+//               />
+//             </div>
+//           </SectionCard>
+
+//           {/* Dates */}
+
+//           <SectionCard
+//             icon={FaCalendarAlt}
+//             title="Invoice Dates & Status"
+//             color="blue"
+//           >
+//             <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
+//               <InfoRow
+//                 label="Invoice Date"
+//                 value={formatDate(invoice.invoiceDate)}
+//               />
+
+//               <InfoRow
+//                 label="Due Date"
+//                 value={formatDate(invoice.dueDate)}
+//               />
+
+//               <InfoRow
+//                 label="Reference No."
+//                 value={invoice.refNumber}
+//               />
+
+//               <div className="flex flex-col gap-0.5">
+//                 <span className="text-[10.5px] font-bold uppercase tracking-wider text-gray-400">
+//                   Status
+//                 </span>
+
+//                 <StatusBadge status={invoice.status} />
+//               </div>
+//             </div>
+//           </SectionCard>
+
+//           {/* Addresses */}
+
+//           {(invoice.billingAddress ||
+//             invoice.shippingAddress) && (
+//             <SectionCard
+//               icon={FaMapMarkerAlt}
+//               title="Address Information"
+//               color="violet"
+//             >
+//               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+//                 {invoice.billingAddress && (
+//                   <div>
+//                     <p className="text-[10.5px] font-bold uppercase tracking-wider text-blue-500 mb-2">
+//                       Billing Address
+//                     </p>
+
+//                     <div className="bg-blue-50/50 rounded-xl p-4 border border-blue-100 text-sm text-gray-700 leading-relaxed space-y-0.5">
+//                       {invoice.billingAddress.address1 && (
+//                         <p>
+//                           {invoice.billingAddress.address1}
+//                         </p>
+//                       )}
+
+//                       {invoice.billingAddress.address2 && (
+//                         <p>
+//                           {invoice.billingAddress.address2}
+//                         </p>
+//                       )}
+
+//                       <p>
+//                         {[
+//                           invoice.billingAddress.city,
+//                           invoice.billingAddress.state,
+//                           invoice.billingAddress.zip,
+//                         ]
+//                           .filter(Boolean)
+//                           .join(", ")}
+//                       </p>
+
+//                       {invoice.billingAddress.country && (
+//                         <p>
+//                           {invoice.billingAddress.country}
+//                         </p>
+//                       )}
+//                     </div>
+//                   </div>
+//                 )}
+
+//                 {invoice.shippingAddress && (
+//                   <div>
+//                     <p className="text-[10.5px] font-bold uppercase tracking-wider text-emerald-500 mb-2">
+//                       Shipping Address
+//                     </p>
+
+//                     <div className="bg-emerald-50/50 rounded-xl p-4 border border-emerald-100 text-sm text-gray-700 leading-relaxed space-y-0.5">
+//                       {invoice.shippingAddress.address1 && (
+//                         <p>
+//                           {invoice.shippingAddress.address1}
+//                         </p>
+//                       )}
+
+//                       {invoice.shippingAddress.address2 && (
+//                         <p>
+//                           {invoice.shippingAddress.address2}
+//                         </p>
+//                       )}
+
+//                       <p>
+//                         {[
+//                           invoice.shippingAddress.city,
+//                           invoice.shippingAddress.state,
+//                           invoice.shippingAddress.zip,
+//                         ]
+//                           .filter(Boolean)
+//                           .join(", ")}
+//                       </p>
+
+//                       {invoice.shippingAddress.country && (
+//                         <p>
+//                           {invoice.shippingAddress.country}
+//                         </p>
+//                       )}
+//                     </div>
+//                   </div>
+//                 )}
+
+//               </div>
+//             </SectionCard>
+//           )}
+
+//           {/* Items */}
+
+//           <SectionCard
+//             icon={FaBoxOpen}
+//             title="Line Items"
+//             color="emerald"
+//           >
+//             {items.length > 0 ? (
+//               <>
+//                 <div className="hidden md:block overflow-x-auto">
+//                   <table className="w-full text-sm border-collapse">
+//                     <thead>
+//                       <tr className="bg-gray-50 border-b border-gray-100">
+//                         {[
+//                           "#",
+//                           "Item Code",
+//                           "Item Name",
+//                           "Description",
+//                           "Warehouse",
+//                           "Qty",
+//                           "Unit Price",
+//                           "Discount",
+//                           "Tax",
+//                           "Total",
+//                         ].map((h) => (
+//                           <th
+//                             key={h}
+//                             className="px-3 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-wider text-gray-400 whitespace-nowrap"
+//                           >
+//                             {h}
+//                           </th>
+//                         ))}
+//                       </tr>
+//                     </thead>
+
+//                     <tbody>
+//                       {items.map((item, index) => (
+//                         <tr
+//                           key={index}
+//                           className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors"
+//                         >
+//                           <td className="px-3 py-3 text-xs text-gray-300 font-mono">
+//                             {index + 1}
+//                           </td>
+
+//                           <td className="px-3 py-3">
+//                             <span className="font-mono text-[11px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
+//                               {item.itemCode || "—"}
+//                             </span>
+//                           </td>
+
+//                           <td className="px-3 py-3 font-semibold text-gray-800">
+//                             {item.itemName}
+//                           </td>
+
+//                           <td className="px-3 py-3 text-xs text-gray-500 max-w-[150px] truncate">
+//                             {item.itemDescription}
+//                           </td>
+
+//                           <td className="px-3 py-3 text-xs text-gray-500">
+//                             {item.warehouseCode
+//                               ? `${item.warehouseCode} - ${item.warehouseName}`
+//                               : "—"}
+//                           </td>
+
+//                           <td className="px-3 py-3">
+//                             <div className="text-xs">
+//                               <p className="font-bold text-gray-800">
+//                                 {item.quantity}
+//                               </p>
+
+//                               {item.allowedQuantity > 0 && (
+//                                 <p className="text-emerald-600">
+//                                   Allowed: {item.allowedQuantity}
+//                                 </p>
+//                               )}
+
+//                               {item.receivedQuantity > 0 && (
+//                                 <p className="text-blue-600">
+//                                   Received: {item.receivedQuantity}
+//                                 </p>
+//                               )}
+//                             </div>
+//                           </td>
+
+//                           <td className="px-3 py-3 text-right text-xs font-semibold text-gray-700">
+//                             {formatCurrency(item.unitPrice)}
+//                           </td>
+
+//                           <td className="px-3 py-3 text-right text-xs text-gray-500">
+//                             {formatCurrency(item.discount)}
+//                           </td>
+
+//                           <td className="px-3 py-3 text-center text-xs">
+//                             <span className="font-semibold text-gray-600">
+//                               {item.taxOption}: {item.gstRate}%
+//                             </span>
+
+//                             <p className="text-gray-400">
+//                               {formatCurrency(item.gstAmount)}
+//                             </p>
+//                           </td>
+
+//                           <td className="px-3 py-3 text-right font-bold text-gray-900">
+//                             {formatCurrency(item.totalAmount)}
+//                           </td>
+//                         </tr>
+//                       ))}
+//                     </tbody>
+//                   </table>
+//                 </div>
+
+//                 {/* Mobile */}
+
+//                 <div className="md:hidden space-y-3">
+//                   {items.map((item, index) => (
+//                     <div
+//                       key={index}
+//                       className="bg-gray-50 rounded-xl p-4 border border-gray-100"
+//                     >
+//                       <div className="flex items-start justify-between mb-2">
+//                         <div>
+//                           <span className="font-mono text-[11px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
+//                             {item.itemCode}
+//                           </span>
+
+//                           <p className="font-bold text-gray-800 text-sm mt-1">
+//                             {item.itemName}
+//                           </p>
+//                         </div>
+
+//                         <span className="font-bold text-gray-900 text-sm">
+//                           {formatCurrency(item.totalAmount)}
+//                         </span>
+//                       </div>
+
+//                       <div className="grid grid-cols-3 gap-2 mt-2 text-xs text-gray-500">
+//                         <span>
+//                           Qty:{" "}
+//                           <b className="text-gray-700">
+//                             {item.quantity}
+//                           </b>
+//                         </span>
+
+//                         <span>
+//                           Price:{" "}
+//                           <b className="text-gray-700">
+//                             ₹{item.unitPrice}
+//                           </b>
+//                         </span>
+
+//                         <span>
+//                           Tax:{" "}
+//                           <b className="text-gray-700">
+//                             {item.gstRate}%
+//                           </b>
+//                         </span>
+//                       </div>
+//                     </div>
+//                   ))}
+//                 </div>
+//               </>
+//             ) : (
+//               <div className="text-center py-8 text-gray-300">
+//                 <div className="text-3xl mb-2">📦</div>
+
+//                 <p className="text-sm">
+//                   No items available
+//                 </p>
+//               </div>
+//             )}
+//           </SectionCard>
+
+//           {/* Financial Summary */}
+
+//           <SectionCard
+//             icon={FaCalculator}
+//             title="Financial Summary"
+//             color="amber"
+//           >
+//             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+//               {[
+//                 {
+//                   label: "Total Before Discount",
+//                   value: formatCurrency(
+//                     invoice.totalBeforeDiscount
+//                   ),
+//                 },
+//                 {
+//                   label: "GST Total",
+//                   value: formatCurrency(invoice.gstTotal),
+//                 },
+//                 {
+//                   label: "Freight",
+//                   value: formatCurrency(invoice.freight),
+//                 },
+//                 {
+//                   label: "Rounding",
+//                   value: formatCurrency(invoice.rounding),
+//                 },
+//                 {
+//                   label: "Total Down Payment",
+//                   value: formatCurrency(
+//                     invoice.totalDownPayment
+//                   ),
+//                 },
+//                 {
+//                   label: "Applied Amounts",
+//                   value: formatCurrency(
+//                     invoice.appliedAmounts
+//                   ),
+//                 },
+//               ].map(({ label, value }) => (
+//                 <div
+//                   key={label}
+//                   className="bg-gray-50 rounded-xl p-3 border border-gray-100"
+//                 >
+//                   <p className="text-[10.5px] font-bold uppercase tracking-wider text-gray-400 mb-1">
+//                     {label}
+//                   </p>
+
+//                   <p className="text-sm font-bold text-gray-800">
+//                     {value}
+//                   </p>
+//                 </div>
+//               ))}
+//             </div>
+
+//             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+//               <div className="bg-indigo-600 rounded-2xl p-4 text-white">
+//                 <p className="text-[10px] uppercase font-bold opacity-70 mb-1">
+//                   Grand Total
+//                 </p>
+
+//                 <p className="text-2xl font-black">
+//                   {formatCurrency(invoice.grandTotal)}
+//                 </p>
+//               </div>
+
+//               <div className="bg-gray-100 rounded-2xl p-4">
+//                 <p className="text-[10px] uppercase font-bold text-gray-400 mb-1">
+//                   Open Balance
+//                 </p>
+
+//                 <p className="text-2xl font-black text-gray-800">
+//                   {formatCurrency(invoice.openBalance)}
+//                 </p>
+//               </div>
+//             </div>
+
+//             {invoice.remarks && (
+//               <div className="mt-4 bg-yellow-50 border border-yellow-100 rounded-xl p-4">
+//                 <p className="text-[10.5px] font-bold uppercase tracking-wider text-yellow-600 mb-1">
+//                   Remarks
+//                 </p>
+
+//                 <p className="text-sm text-gray-700">
+//                   {invoice.remarks}
+//                 </p>
+//               </div>
+//             )}
+//           </SectionCard>
+
+//           {/* Attachments */}
+
+//           {invoice.attachments &&
+//             invoice.attachments.length > 0 && (
+//               <SectionCard
+//                 icon={FaPaperclip}
+//                 title="Attachments"
+//                 color="gray"
+//               >
+//                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+//                   {invoice.attachments.map((att, i) => {
+//                     const isImage =
+//                       att.fileType?.startsWith("image/");
+
+//                     const isPDF =
+//                       att.fileType ===
+//                         "application/pdf" ||
+//                       att.fileName
+//                         ?.toLowerCase()
+//                         .endsWith(".pdf");
+
+//                     return (
+//                       <div
+//                         key={i}
+//                         className="border rounded-xl p-2 bg-gray-50 hover:shadow-md transition-all"
+//                       >
+//                         <div className="h-24 flex items-center justify-center overflow-hidden rounded-lg mb-2">
+//                           {isImage ? (
+//                             <img
+//                               src={att.fileUrl}
+//                               alt={att.fileName}
+//                               className="h-full object-cover w-full rounded-lg"
+//                             />
+//                           ) : isPDF ? (
+//                             <iframe
+//                               src={att.fileUrl}
+//                               className="w-full h-full rounded-lg"
+//                               title="PDF Preview"
+//                             />
+//                           ) : (
+//                             <div className="text-3xl">
+//                               📎
+//                             </div>
+//                           )}
+//                         </div>
+
+//                         <a
+//                           href={att.fileUrl}
+//                           target="_blank"
+//                           rel="noopener noreferrer"
+//                           className="block text-[10px] text-indigo-600 truncate font-semibold hover:underline"
+//                         >
+//                           {att.fileName}
+//                         </a>
+//                       </div>
+//                     );
+//                   })}
+//                 </div>
+//               </SectionCard>
+//             )}
+
+//           {/* Footer Actions */}
+
+//           <div className="flex items-center justify-between pt-4 pb-10">
+//             <button
+//               onClick={() =>
+//                 router.push("/admin/sales-invoice-view")
+//               }
+//               className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-white border border-gray-200 text-gray-600 font-bold text-sm hover:bg-gray-50 transition-all"
+//             >
+//               <FaArrowLeft className="text-xs" />
+
+//               Back to List
+//             </button>
+
+//             <div className="flex gap-2">
+
+//               <button
+//                 onClick={downloadPDF}
+//                 disabled={downloading}
+//                 className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-sm hover:bg-emerald-700 transition-all disabled:opacity-60"
+//               >
+//                 <FaDownload className="text-xs" />
+
+//                 {downloading
+//                   ? "Generating..."
+//                   : "Download PDF"}
+//               </button>
+
+//               <button
+//                 onClick={() =>
+//                   router.push(
+//                     `/admin/sales-invoice-view/new?editId=${invoice._id}`
+//                   )
+//                 }
+//                 className="flex items-center gap-2 px-8 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-sm hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
+//               >
+//                 <FaEdit className="text-xs" />
+
+//                 Edit Invoice
+//               </button>
+
+//             </div>
+//           </div>
+//         </div>
+//       </div>
+
+//       {/* =====================================================
+//           PDF TEMPLATE
+//           This is intentionally separate from the dashboard UI.
+//           It gets rendered by html2pdf.js.
+//       ===================================================== */}
+
+//       <div
+//         ref={pdfRef}
+//         style={{
+//           position: "absolute",
+//           left: "-10000px",
+//           top: "0",
+//           width: "794px",
+//           background: "#ffffff",
+//           color: "#111827",
+//           fontFamily: "Arial, Helvetica, sans-serif",
+//           padding: "38px",
+//           zIndex: -1,
+//         }}
+//       >
+
+//         {/* PDF HEADER */}
+
+//         <div
+//           style={{
+//             display: "flex",
+//             justifyContent: "space-between",
+//             borderBottom: "2px solid #111827",
+//             paddingBottom: "18px",
+//             marginBottom: "20px",
+//           }}
+//         >
+//           <div style={{ width: "60%" }}>
+//             <div
+//               style={{
+//                 fontSize: "24px",
+//                 fontWeight: "700",
+//                 marginBottom: "7px",
+//               }}
+//             >
+//               ABC LOGISTICS PVT. LTD.
+//             </div>
+
+//             <div
+//               style={{
+//                 fontSize: "11px",
+//                 lineHeight: "1.6",
+//                 color: "#4b5563",
+//               }}
+//             >
+//               123 Business Park, Andheri East
+//               <br />
+//               Mumbai, Maharashtra - 400069
+//               <br />
+//               GSTIN: 27ABCDE1234F1Z5
+//               <br />
+//               Phone: +91 98765 43210
+//               <br />
+//               Email: accounts@abclogistics.com
+//             </div>
+//           </div>
+
+//           <div
+//             style={{
+//               textAlign: "right",
+//               width: "40%",
+//             }}
+//           >
+//             <div
+//               style={{
+//                 fontSize: "25px",
+//                 fontWeight: "800",
+//                 letterSpacing: "1px",
+//                 marginBottom: "10px",
+//               }}
+//             >
+//               TAX INVOICE
+//             </div>
+
+//             <div
+//               style={{
+//                 display: "inline-block",
+//                 padding: "5px 12px",
+//                 background: "#ecfdf5",
+//                 color: "#047857",
+//                 border: "1px solid #a7f3d0",
+//                 borderRadius: "4px",
+//                 fontSize: "10px",
+//                 fontWeight: "700",
+//               }}
+//             >
+//               {(invoice.status || "CONFIRMED").toUpperCase()}
+//             </div>
+//           </div>
+//         </div>
+
+//         {/* INVOICE DETAILS */}
+
+//         <div
+//           style={{
+//             display: "grid",
+//             gridTemplateColumns: "1fr 1fr",
+//             gap: "18px",
+//             marginBottom: "20px",
+//           }}
+//         >
+//           <div
+//             style={{
+//               border: "1px solid #d1d5db",
+//               padding: "13px",
+//               borderRadius: "5px",
+//             }}
+//           >
+//             <div
+//               style={{
+//                 fontSize: "10px",
+//                 fontWeight: "700",
+//                 color: "#6b7280",
+//                 textTransform: "uppercase",
+//                 marginBottom: "8px",
+//               }}
+//             >
+//               Bill To
+//             </div>
+
+//             <div
+//               style={{
+//                 fontSize: "12px",
+//                 fontWeight: "700",
+//                 marginBottom: "5px",
+//               }}
+//             >
+//               {invoice.customerName || "—"}
+//             </div>
+
+//             <div
+//               style={{
+//                 fontSize: "10px",
+//                 color: "#4b5563",
+//                 lineHeight: "1.6",
+//               }}
+//             >
+//               Customer Code: {invoice.customerCode || "—"}
+//               <br />
+//               Contact Person: {invoice.contactPerson || "—"}
+//               <br />
+
+//               {invoice.billingAddress?.address1 || ""}
+//               <br />
+
+//               {invoice.billingAddress?.address2 || ""}
+//               <br />
+
+//               {[
+//                 invoice.billingAddress?.city,
+//                 invoice.billingAddress?.state,
+//                 invoice.billingAddress?.zip,
+//               ]
+//                 .filter(Boolean)
+//                 .join(", ")}
+//               <br />
+
+//               {invoice.billingAddress?.country || ""}
+//             </div>
+//           </div>
+
+//           <div
+//             style={{
+//               border: "1px solid #d1d5db",
+//               padding: "13px",
+//               borderRadius: "5px",
+//             }}
+//           >
+//             <div
+//               style={{
+//                 fontSize: "10px",
+//                 fontWeight: "700",
+//                 color: "#6b7280",
+//                 textTransform: "uppercase",
+//                 marginBottom: "8px",
+//               }}
+//             >
+//               Invoice Details
+//             </div>
+
+//             <table
+//               style={{
+//                 width: "100%",
+//                 fontSize: "10px",
+//                 borderCollapse: "collapse",
+//               }}
+//             >
+//               <tbody>
+//                 <tr>
+//                   <td style={{ padding: "3px 0" }}>
+//                     Invoice No.
+//                   </td>
+//                   <td
+//                     style={{
+//                       textAlign: "right",
+//                       fontWeight: "700",
+//                     }}
+//                   >
+//                     {invoice.documentNumber || "—"}
+//                   </td>
+//                 </tr>
+
+//                 <tr>
+//                   <td style={{ padding: "3px 0" }}>
+//                     Invoice Date
+//                   </td>
+//                   <td
+//                     style={{
+//                       textAlign: "right",
+//                       fontWeight: "700",
+//                     }}
+//                   >
+//                     {formatDate(invoice.invoiceDate)}
+//                   </td>
+//                 </tr>
+
+//                 <tr>
+//                   <td style={{ padding: "3px 0" }}>
+//                     Due Date
+//                   </td>
+//                   <td
+//                     style={{
+//                       textAlign: "right",
+//                       fontWeight: "700",
+//                     }}
+//                   >
+//                     {formatDate(invoice.dueDate)}
+//                   </td>
+//                 </tr>
+
+//                 <tr>
+//                   <td style={{ padding: "3px 0" }}>
+//                     Reference No.
+//                   </td>
+//                   <td
+//                     style={{
+//                       textAlign: "right",
+//                       fontWeight: "700",
+//                     }}
+//                   >
+//                     {invoice.refNumber || "—"}
+//                   </td>
+//                 </tr>
+
+//                 <tr>
+//                   <td style={{ padding: "3px 0" }}>
+//                     Sales Employee
+//                   </td>
+//                   <td
+//                     style={{
+//                       textAlign: "right",
+//                       fontWeight: "700",
+//                     }}
+//                   >
+//                     {invoice.salesEmployee || "—"}
+//                   </td>
+//                 </tr>
+//               </tbody>
+//             </table>
+//           </div>
+//         </div>
+
+//         {/* SHIPPING */}
+
+//         {invoice.shippingAddress && (
+//           <div
+//             style={{
+//               border: "1px solid #d1d5db",
+//               padding: "12px",
+//               borderRadius: "5px",
+//               marginBottom: "20px",
+//             }}
+//           >
+//             <div
+//               style={{
+//                 fontSize: "10px",
+//                 fontWeight: "700",
+//                 color: "#047857",
+//                 textTransform: "uppercase",
+//                 marginBottom: "6px",
+//               }}
+//             >
+//               Ship To
+//             </div>
+
+//             <div
+//               style={{
+//                 fontSize: "10px",
+//                 color: "#374151",
+//                 lineHeight: "1.6",
+//               }}
+//             >
+//               {invoice.shippingAddress.address1 || ""}
+//               <br />
+
+//               {invoice.shippingAddress.address2 || ""}
+//               <br />
+
+//               {[
+//                 invoice.shippingAddress.city,
+//                 invoice.shippingAddress.state,
+//                 invoice.shippingAddress.zip,
+//               ]
+//                 .filter(Boolean)
+//                 .join(", ")}
+
+//               <br />
+
+//               {invoice.shippingAddress.country || ""}
+//             </div>
+//           </div>
+//         )}
+
+//         {/* ITEMS TABLE */}
+
+//         <table
+//           style={{
+//             width: "100%",
+//             borderCollapse: "collapse",
+//             marginBottom: "18px",
+//             tableLayout: "fixed",
+//           }}
+//         >
+//           <thead>
+//             <tr>
+//               <th
+//                 style={{
+//                   width: "4%",
+//                   background: "#111827",
+//                   color: "#fff",
+//                   padding: "8px 5px",
+//                   fontSize: "8px",
+//                   textAlign: "center",
+//                 }}
+//               >
+//                 #
+//               </th>
+
+//               <th
+//                 style={{
+//                   width: "26%",
+//                   background: "#111827",
+//                   color: "#fff",
+//                   padding: "8px 5px",
+//                   fontSize: "8px",
+//                   textAlign: "left",
+//                 }}
+//               >
+//                 ITEM
+//               </th>
+
+//               <th
+//                 style={{
+//                   width: "10%",
+//                   background: "#111827",
+//                   color: "#fff",
+//                   padding: "8px 5px",
+//                   fontSize: "8px",
+//                   textAlign: "left",
+//                 }}
+//               >
+//                 CODE
+//               </th>
+
+//               <th
+//                 style={{
+//                   width: "8%",
+//                   background: "#111827",
+//                   color: "#fff",
+//                   padding: "8px 5px",
+//                   fontSize: "8px",
+//                   textAlign: "center",
+//                 }}
+//               >
+//                 QTY
+//               </th>
+
+//               <th
+//                 style={{
+//                   width: "12%",
+//                   background: "#111827",
+//                   color: "#fff",
+//                   padding: "8px 5px",
+//                   fontSize: "8px",
+//                   textAlign: "right",
+//                 }}
+//               >
+//                 RATE
+//               </th>
+
+//               <th
+//                 style={{
+//                   width: "10%",
+//                   background: "#111827",
+//                   color: "#fff",
+//                   padding: "8px 5px",
+//                   fontSize: "8px",
+//                   textAlign: "right",
+//                 }}
+//               >
+//                 DISCOUNT
+//               </th>
+
+//               <th
+//                 style={{
+//                   width: "10%",
+//                   background: "#111827",
+//                   color: "#fff",
+//                   padding: "8px 5px",
+//                   fontSize: "8px",
+//                   textAlign: "center",
+//                 }}
+//               >
+//                 TAX
+//               </th>
+
+//               <th
+//                 style={{
+//                   width: "20%",
+//                   background: "#111827",
+//                   color: "#fff",
+//                   padding: "8px 5px",
+//                   fontSize: "8px",
+//                   textAlign: "right",
+//                 }}
+//               >
+//                 AMOUNT
+//               </th>
+//             </tr>
+//           </thead>
+
+//           <tbody>
+//             {items.map((item, index) => (
+//               <tr
+//                 key={index}
+//                 style={{
+//                   pageBreakInside: "avoid",
+//                 }}
+//               >
+//                 <td
+//                   style={{
+//                     padding: "8px 5px",
+//                     borderBottom: "1px solid #e5e7eb",
+//                     fontSize: "9px",
+//                     textAlign: "center",
+//                   }}
+//                 >
+//                   {index + 1}
+//                 </td>
+
+//                 <td
+//                   style={{
+//                     padding: "8px 5px",
+//                     borderBottom: "1px solid #e5e7eb",
+//                     fontSize: "9px",
+//                   }}
+//                 >
+//                   <strong>
+//                     {item.itemName || "—"}
+//                   </strong>
+
+//                   {item.itemDescription && (
+//                     <div
+//                       style={{
+//                         color: "#6b7280",
+//                         fontSize: "8px",
+//                         marginTop: "2px",
+//                       }}
+//                     >
+//                       {item.itemDescription}
+//                     </div>
+//                   )}
+//                 </td>
+
+//                 <td
+//                   style={{
+//                     padding: "8px 5px",
+//                     borderBottom: "1px solid #e5e7eb",
+//                     fontSize: "8px",
+//                   }}
+//                 >
+//                   {item.itemCode || "—"}
+//                 </td>
+
+//                 <td
+//                   style={{
+//                     padding: "8px 5px",
+//                     borderBottom: "1px solid #e5e7eb",
+//                     fontSize: "9px",
+//                     textAlign: "center",
+//                   }}
+//                 >
+//                   {item.quantity || 0}
+//                 </td>
+
+//                 <td
+//                   style={{
+//                     padding: "8px 5px",
+//                     borderBottom: "1px solid #e5e7eb",
+//                     fontSize: "9px",
+//                     textAlign: "right",
+//                   }}
+//                 >
+//                   {formatCurrency(item.unitPrice)}
+//                 </td>
+
+//                 <td
+//                   style={{
+//                     padding: "8px 5px",
+//                     borderBottom: "1px solid #e5e7eb",
+//                     fontSize: "9px",
+//                     textAlign: "right",
+//                   }}
+//                 >
+//                   {formatCurrency(item.discount)}
+//                 </td>
+
+//                 <td
+//                   style={{
+//                     padding: "8px 5px",
+//                     borderBottom: "1px solid #e5e7eb",
+//                     fontSize: "8px",
+//                     textAlign: "center",
+//                   }}
+//                 >
+//                   {item.gstRate || 0}%
+//                   <br />
+//                   <span style={{ color: "#6b7280" }}>
+//                     {formatCurrency(item.gstAmount)}
+//                   </span>
+//                 </td>
+
+//                 <td
+//                   style={{
+//                     padding: "8px 5px",
+//                     borderBottom: "1px solid #e5e7eb",
+//                     fontSize: "9px",
+//                     fontWeight: "700",
+//                     textAlign: "right",
+//                   }}
+//                 >
+//                   {formatCurrency(item.totalAmount)}
+//                 </td>
+//               </tr>
+//             ))}
+//           </tbody>
+//         </table>
+
+//         {/* TOTALS */}
+
+//         <div
+//           style={{
+//             display: "flex",
+//             justifyContent: "flex-end",
+//             marginBottom: "18px",
+//           }}
+//         >
+//           <table
+//             style={{
+//               width: "300px",
+//               borderCollapse: "collapse",
+//               fontSize: "10px",
+//             }}
+//           >
+//             <tbody>
+//               <tr>
+//                 <td style={{ padding: "4px" }}>
+//                   Total Before Discount
+//                 </td>
+
+//                 <td
+//                   style={{
+//                     padding: "4px",
+//                     textAlign: "right",
+//                   }}
+//                 >
+//                   {formatCurrency(
+//                     invoice.totalBeforeDiscount
+//                   )}
+//                 </td>
+//               </tr>
+
+//               <tr>
+//                 <td style={{ padding: "4px" }}>
+//                   Discount
+//                 </td>
+
+//                 <td
+//                   style={{
+//                     padding: "4px",
+//                     textAlign: "right",
+//                   }}
+//                 >
+//                   {formatCurrency(invoice.discount)}
+//                 </td>
+//               </tr>
+
+//               <tr>
+//                 <td style={{ padding: "4px" }}>
+//                   Taxable Amount
+//                 </td>
+
+//                 <td
+//                   style={{
+//                     padding: "4px",
+//                     textAlign: "right",
+//                   }}
+//                 >
+//                   {formatCurrency(taxableAmount)}
+//                 </td>
+//               </tr>
+
+//               <tr>
+//                 <td style={{ padding: "4px" }}>
+//                   GST Total
+//                 </td>
+
+//                 <td
+//                   style={{
+//                     padding: "4px",
+//                     textAlign: "right",
+//                   }}
+//                 >
+//                   {formatCurrency(gstTotal)}
+//                 </td>
+//               </tr>
+
+//               <tr>
+//                 <td style={{ padding: "4px" }}>
+//                   Freight
+//                 </td>
+
+//                 <td
+//                   style={{
+//                     padding: "4px",
+//                     textAlign: "right",
+//                   }}
+//                 >
+//                   {formatCurrency(freight)}
+//                 </td>
+//               </tr>
+
+//               <tr>
+//                 <td style={{ padding: "4px" }}>
+//                   Rounding
+//                 </td>
+
+//                 <td
+//                   style={{
+//                     padding: "4px",
+//                     textAlign: "right",
+//                   }}
+//                 >
+//                   {formatCurrency(rounding)}
+//                 </td>
+//               </tr>
+
+//               <tr>
+//                 <td
+//                   style={{
+//                     borderTop: "2px solid #111827",
+//                     padding: "10px 4px 4px",
+//                     fontWeight: "800",
+//                     fontSize: "12px",
+//                   }}
+//                 >
+//                   GRAND TOTAL
+//                 </td>
+
+//                 <td
+//                   style={{
+//                     borderTop: "2px solid #111827",
+//                     padding: "10px 4px 4px",
+//                     fontWeight: "800",
+//                     fontSize: "12px",
+//                     textAlign: "right",
+//                   }}
+//                 >
+//                   {formatCurrency(grandTotal)}
+//                 </td>
+//               </tr>
+//             </tbody>
+//           </table>
+//         </div>
+
+//         {/* AMOUNT WORDS */}
+
+//         <div
+//           style={{
+//             background: "#f3f4f6",
+//             borderLeft: "3px solid #111827",
+//             padding: "10px",
+//             fontSize: "9px",
+//             marginBottom: "20px",
+//           }}
+//         >
+//           <strong>Amount in Words:</strong>{" "}
+//           {numberToWords(grandTotal)}
+//         </div>
+
+//         {/* PAYMENT / BALANCE */}
+
+//         <div
+//           style={{
+//             display: "grid",
+//             gridTemplateColumns: "1fr 1fr",
+//             gap: "20px",
+//             marginBottom: "25px",
+//           }}
+//         >
+//           <div>
+//             <div
+//               style={{
+//                 fontSize: "10px",
+//                 fontWeight: "700",
+//                 marginBottom: "8px",
+//               }}
+//             >
+//               PAYMENT / BANK DETAILS
+//             </div>
+
+//             <div
+//               style={{
+//                 fontSize: "9px",
+//                 color: "#4b5563",
+//                 lineHeight: "1.7",
+//               }}
+//             >
+//               Bank Name: HDFC Bank
+//               <br />
+//               Account Name: ABC Logistics Pvt. Ltd.
+//               <br />
+//               Account No.: XXXXXXXXXXXX
+//               <br />
+//               IFSC: HDFC0000123
+//             </div>
+//           </div>
+
+//           <div>
+//             <div
+//               style={{
+//                 fontSize: "10px",
+//                 fontWeight: "700",
+//                 marginBottom: "8px",
+//               }}
+//             >
+//               BALANCE
+//             </div>
+
+//             <div
+//               style={{
+//                 fontSize: "18px",
+//                 fontWeight: "800",
+//               }}
+//             >
+//               {formatCurrency(openBalance)}
+//             </div>
+
+//             {invoice.totalDownPayment > 0 && (
+//               <div
+//                 style={{
+//                   fontSize: "9px",
+//                   color: "#6b7280",
+//                   marginTop: "5px",
+//                 }}
+//               >
+//                 Down Payment:{" "}
+//                 {formatCurrency(invoice.totalDownPayment)}
+//               </div>
+//             )}
+//           </div>
+//         </div>
+
+//         {/* REMARKS */}
+
+//         {invoice.remarks && (
+//           <div
+//             style={{
+//               border: "1px solid #fde68a",
+//               background: "#fffbeb",
+//               padding: "10px",
+//               marginBottom: "25px",
+//               fontSize: "9px",
+//             }}
+//           >
+//             <strong>Remarks:</strong>{" "}
+//             {invoice.remarks}
+//           </div>
+//         )}
+
+//         {/* FOOTER */}
+
+//         <div
+//           style={{
+//             borderTop: "1px solid #d1d5db",
+//             paddingTop: "15px",
+//             display: "flex",
+//             justifyContent: "space-between",
+//             alignItems: "flex-end",
+//           }}
+//         >
+//           <div
+//             style={{
+//               fontSize: "8px",
+//               color: "#6b7280",
+//               lineHeight: "1.6",
+//             }}
+//           >
+//             <strong>Terms & Conditions</strong>
+//             <br />
+//             Payment as per agreed terms.
+//             <br />
+//             Goods/services are subject to company terms.
+//             <br />
+//             Subject to applicable jurisdiction.
+//           </div>
+
+//           <div
+//             style={{
+//               width: "160px",
+//               textAlign: "center",
+//               fontSize: "9px",
+//               paddingTop: "35px",
+//               borderTop: "1px solid #6b7280",
+//             }}
+//           >
+//             Authorized Signatory
+//           </div>
+//         </div>
+
+//       </div>
+//     </>
+//   );
+// }
 
 // 'use client';
 

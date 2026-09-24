@@ -34,6 +34,7 @@
     "@mui/x-data-grid": "^9.0.1",
     "@mui/x-date-pickers": "^6.19.9",
     "@prisma/client": "^6.0.0",
+    "@sparticuz/chromium": "^153.0.0",
     "@tiptap/extension-underline": "^3.10.7",
     "@tiptap/react": "^3.10.7",
     "@tiptap/starter-kit": "^3.10.7",
@@ -53,6 +54,7 @@
     "gantt-task-react": "^0.3.9",
     "googleapis": "^171.4.0",
     "groq-sdk": "^0.35.0",
+    "html2pdf": "^0.0.11",
     "html2pdf.js": "^0.14.0",
     "install": "^0.13.0",
     "json2csv": "^6.0.0-alpha.2",
@@ -76,6 +78,7 @@
     "papaparse": "^5.5.3",
     "pdfjs-dist": "^5.1.91",
     "pdfkit": "^0.18.0",
+    "puppeteer-core": "^25.11.0",
     "razorpay": "^2.9.6",
     "react": "^18.3.1",
     "react-beautiful-dnd": "^13.1.1",
@@ -106,6 +109,7 @@
     "or": "^0.2.0",
     "postcss": "^8",
     "prisma": "^6.0.0",
+    "puppeteer": "^25.11.0",
     "tailwindcss": "^3.4.1"
   }
 }

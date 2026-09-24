@@ -78,8 +78,18 @@ export async function GET(req) {
       .limit(limit)
       .lean();
 
-    // ✅ Filter out records where item was removed by match
-    inventories = inventories.filter(inv => inv.item !== null);
+    // ✅ Only drop rows whose item failed an explicit search/POS filter.
+    // Without a filter, a null item/warehouse means the stored reference points
+    // to a record that no longer exists - keep the row and flag it so the
+    // Inventory View shows it instead of silently hiding it.
+    if (Object.keys(itemMatch).length > 0) {
+      inventories = inventories.filter(inv => inv.item !== null);
+    }
+    inventories = inventories.map(inv => ({
+      ...inv,
+      itemMissing: !inv.item,
+      warehouseMissing: !inv.warehouse,
+    }));
 
     // ✅ If variant SKU is provided, filter inside variantInventory
     if (variantSku) {
@@ -273,4 +283,3 @@ export async function GET(req) {
 //     );
 //   }
 // }
-

@@ -1,21 +1,21 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import axios from "axios";
 import ItemSection from "@/components/ItemSection";
 import SupplierSearch from "@/components/SupplierSearch";
-import { Suspense } from "react";
-import { FaUser } from "react-icons/fa";
+import PurchaseRequestSearch from "@/components/PurchaseRequestSearch";
+import { FaUser, FaFileAlt, FaCalculator, FaCoins, FaTimes } from "react-icons/fa";
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { toast } from "react-toastify";
 
-// ── Helper components (unchanged) ──
+// ── Shared style helpers ──
 const SectionCard = ({ icon: Icon, title, children, color = "indigo" }) => (
-  <div className={`bg-white rounded-2xl shadow-sm border border-${color}-100 overflow-hidden mb-6`}>
-    <div className={`bg-${color}-50 px-5 py-3 border-b border-${color}-100 flex items-center gap-2`}>
-      <Icon className={`text-${color}-500 text-sm`} />
+  <div className="bg-white rounded-2xl shadow-sm border border-indigo-100 overflow-hidden mb-6">
+    <div className="bg-indigo-50 px-5 py-3 border-b border-indigo-100 flex items-center gap-2">
+      {Icon && <Icon className="text-indigo-500 text-sm" />}
       <h3 className="font-bold text-gray-800 text-sm">{title}</h3>
     </div>
     <div className="p-5">{children}</div>
@@ -24,7 +24,9 @@ const SectionCard = ({ icon: Icon, title, children, color = "indigo" }) => (
 
 const ReadField = ({ label, value }) => (
   <div>
-    <label className="block text-[10.5px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">{label}</label>
+    <label className="block text-[10.5px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">
+      {label}
+    </label>
     <div className="w-full px-3 py-2.5 rounded-lg border border-gray-200 bg-gray-50 text-sm font-medium text-gray-700">
       {value || "—"}
     </div>
@@ -33,13 +35,16 @@ const ReadField = ({ label, value }) => (
 
 const Lbl = ({ text, req }) => (
   <label className="block text-[10.5px] font-bold uppercase tracking-wider text-gray-500 mb-1.5">
-    {text}{req && <span className="text-red-500 ml-0.5">*</span>}
+    {text}
+    {req && <span className="text-red-500 ml-0.5">*</span>}
   </label>
 );
 
 const fi = (err = false) =>
-  `w-full px-3 py-2.5 rounded-lg border text-sm font-medium outline-none ${
-    err ? "border-red-400 ring-2 ring-red-100 bg-red-50" : "border-gray-200 bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+  `w-full px-3 py-2.5 rounded-lg border text-sm font-medium outline-none transition-colors ${
+    err
+      ? "border-red-400 ring-2 ring-red-100 bg-red-50 text-red-900"
+      : "border-gray-200 bg-white text-gray-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
   }`;
 
 const round = (num, decimals = 2) => {
@@ -73,7 +78,7 @@ const computeItemValues = (item) => {
   return { priceAfterDiscount, totalAmount, gstAmount: 0, cgstAmount: 0, sgstAmount: 0, igstAmount: 0 };
 };
 
-const getToken = () => localStorage.getItem("token");
+const getToken = () => (typeof window !== "undefined" ? localStorage.getItem("token") : null);
 
 const initialState = {
   supplier: "",
@@ -134,7 +139,7 @@ const initialState = {
 
 function PurchaseQuotationFormWrapper() {
   return (
-    <Suspense fallback={<div className="text-center py-10">Loading form data...</div>}>
+    <Suspense fallback={<div className="text-center py-10 font-medium text-gray-500">Loading form data...</div>}>
       <PurchaseQuotationForm />
     </Suspense>
   );
@@ -148,116 +153,183 @@ function PurchaseQuotationForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [fetchingImages, setFetchingImages] = useState(false);
+  const [linkedRequestLabel, setLinkedRequestLabel] = useState(null);
+  const fromRequestId = searchParams.get("fromRequestId");
 
   // Fetch quotation data
-useEffect(() => {
-  if (editId && /^[0-9a-fA-F]{24}$/.test(editId)) {
-    setLoading(true);
-    const token = getToken();
-    if (!token) {
-      setError("Unauthorized: Please login again");
-      setLoading(false);
-      return;
-    }
-    axios
-      .get(`/api/purchase-quotation?id=${editId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      .then(async (res) => {
-        if (!res.data.success) throw new Error(res.data.error || "Failed to load quotation");
-        const record = res.data.data;
-        if (!Array.isArray(record.items)) record.items = [];
+  useEffect(() => {
+    if (editId && /^[0-9a-fA-F]{24}$/.test(editId)) {
+      setLoading(true);
+      const token = getToken();
+      if (!token) {
+        setError("Unauthorized: Please login again");
+        setLoading(false);
+        return;
+      }
+      axios
+        .get(`/api/purchase-quotation?id=${editId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        .then(async (res) => {
+          if (!res.data.success) throw new Error(res.data.error || "Failed to load quotation");
+          const record = res.data.data;
+          if (!Array.isArray(record.items)) record.items = [];
 
-        // Step 1: Basic mapping (imageUrl will be empty initially)
-        const baseItems = record.items.map((item) => {
-          const computed = computeItemValues(item);
-          return {
-            ...initialState.items[0],
-            ...item,
-            ...computed,
-            imageUrl: "", // empty – we'll fill after fetch
-            item: item.item?._id || item.item || "",
-            itemCode: item.itemCode || "",
-            itemName: item.itemName || "",
-            itemDescription: item.itemDescription || "",
-            quantity: item.quantity || 0,
-            orderedQuantity: item.orderedQuantity || 0,
-            unitPrice: item.unitPrice || 0,
-            discount: item.discount || 0,
-            freight: item.freight || 0,
-            gstRate: item.gstRate || 0,
-            taxOption: item.taxOption || "GST",
-            igstRate: item.igstRate || 0,
-            tdsAmount: item.tdsAmount || 0,
-            warehouse: item.warehouse?._id || item.warehouse || "",
-            warehouseCode: item.warehouseCode || "",
-            warehouseName: item.warehouseName || "",
-            stockAdded: item.stockAdded || false,
-            managedBy: item.managedBy || "",
-            batches: item.batches || [],
-            qualityCheckDetails: item.qualityCheckDetails || [],
-            removalReason: item.removalReason || "",
-            variant: item.variant || null,
-            selectedVariantId: item.variant?.variantId || null,
-          };
-        });
+          const baseItems = record.items.map((item) => {
+            const computed = computeItemValues(item);
+            return {
+              ...initialState.items[0],
+              ...item,
+              ...computed,
+              imageUrl: "",
+              item: item.item?._id || item.item || "",
+              itemCode: item.itemCode || "",
+              itemName: item.itemName || "",
+              itemDescription: item.itemDescription || "",
+              quantity: item.quantity || 0,
+              orderedQuantity: item.orderedQuantity || 0,
+              unitPrice: item.unitPrice || 0,
+              discount: item.discount || 0,
+              freight: item.freight || 0,
+              gstRate: item.gstRate || 0,
+              taxOption: item.taxOption || "GST",
+              igstRate: item.igstRate || 0,
+              tdsAmount: item.tdsAmount || 0,
+              warehouse: item.warehouse?._id || item.warehouse || "",
+              warehouseCode: item.warehouseCode || "",
+              warehouseName: item.warehouseName || "",
+              stockAdded: item.stockAdded || false,
+              managedBy: item.managedBy || "",
+              batches: item.batches || [],
+              qualityCheckDetails: item.qualityCheckDetails || [],
+              removalReason: item.removalReason || "",
+              variant: item.variant || null,
+              selectedVariantId: item.variant?.variantId || null,
+            };
+          });
 
-        // Step 2: Fetch missing images for items that have an item reference
-        const itemsWithImages = await Promise.all(
-          baseItems.map(async (it, idx) => {
-            if (!it.item) return it; // no item reference, keep as is
-            try {
-              const tokenInner = getToken();
-              const resp = await axios.get(`/api/items/${it.item}`, {
-                headers: { Authorization: `Bearer ${tokenInner}` },
-              });
-              const itemData = resp.data?.data || resp.data;
-              let image = "";
-              // First priority: if this item has a variant SKU (itemCode), find it in variants
-              if (it.itemCode && itemData.variants && Array.isArray(itemData.variants)) {
-                const matchingVariant = itemData.variants.find(v => v.sku === it.itemCode);
-                if (matchingVariant && matchingVariant.imageUrl) {
-                  image = matchingVariant.imageUrl;
+          setFetchingImages(true);
+          const itemsWithImages = await Promise.all(
+            baseItems.map(async (it) => {
+              if (!it.item) return it;
+              try {
+                const tokenInner = getToken();
+                const resp = await axios.get(`/api/items/${it.item}`, {
+                  headers: { Authorization: `Bearer ${tokenInner}` },
+                });
+                const itemData = resp.data?.data || resp.data;
+                let image = "";
+                if (it.itemCode && itemData.variants && Array.isArray(itemData.variants)) {
+                  const matchingVariant = itemData.variants.find((v) => v.sku === it.itemCode);
+                  if (matchingVariant && matchingVariant.imageUrl) {
+                    image = matchingVariant.imageUrl;
+                  }
                 }
+                if (!image && (itemData.imageUrl || itemData.image)) {
+                  image = itemData.imageUrl || itemData.image;
+                }
+                return { ...it, imageUrl: image };
+              } catch (err) {
+                console.warn(`Failed to fetch item ${it.item}`, err);
+                return it;
               }
-              // Fallback: base item's image
-              if (!image && (itemData.imageUrl || itemData.image)) {
-                image = itemData.imageUrl || itemData.image;
-              }
-              return { ...it, imageUrl: image };
-            } catch (err) {
-              console.warn(`Failed to fetch item ${it.item}`, err);
-              return it;
-            }
-          })
-        );
+            })
+          );
+          
 
-        // Step 3: Set the final form data with images
-        setFormData((prev) => ({
-          ...prev,
-          ...record,
-          supplier: record.supplier?._id || record.supplier || "",
-          supplierCode: record.supplierCode || "",
-          supplierName: record.supplierName || "",
-          contactPerson: record.contactPerson || "",
-          status: record.status || "Open",
-          postingDate: record.postingDate ? new Date(record.postingDate) : new Date(),
-          validUntil: record.validUntil ? new Date(record.validUntil) : null,
-          documentDate: record.documentDate ? new Date(record.documentDate) : new Date(),
-          items: itemsWithImages,
-          invoiceType: record.invoiceType || "Normal",
-        }));
-        setFetchingImages(false);
-      })
-      .catch((err) => {
-        console.error(err);
-        setError("Error loading quotation: " + (err.message || "Unknown error"));
-      })
-      .finally(() => setLoading(false));
-  } else if (editId) {
-    setError("Invalid quotation ID");
+                      setFormData((prev) => ({
+            ...prev,
+            ...record,
+            supplier: record.supplier?._id || record.supplier || "",
+            supplierCode: record.supplierCode || "",
+            supplierName: record.supplierName || "",
+            contactPerson: record.contactPerson || "",
+            status: record.status || "Open",
+            postingDate: record.postingDate ? new Date(record.postingDate) : new Date(),
+            validUntil: record.validUntil ? new Date(record.validUntil) : null,
+            documentDate: record.documentDate ? new Date(record.documentDate) : new Date(),
+            items: itemsWithImages,
+            invoiceType: record.invoiceType || "Normal",
+          }));
+          setFetchingImages(false);
+
+          // ── Load linked Purchase Request label, if any ──
+          if (record.purchaseRequest) {
+            axios.get("/api/purchase-request", {
+              headers: { Authorization: `Bearer ${getToken()}` },
+              params: { id: record.purchaseRequest },
+            })
+              .then((prRes) => setLinkedRequestLabel(prRes.data.data?.requestNumber))
+              .catch(() => {});
+          }
+        })
+        .catch((err) => {
+          console.error(err);
+          setError("Error loading quotation: " + (err.message || "Unknown error"));
+        })
+        .finally(() => setLoading(false));
+    } else if (editId) {
+      setError("Invalid quotation ID");
+    }
+  }, [editId]);
+
+  const loadFromRequest = useCallback(async (id) => {
+    if (!id) return;
+    try {
+      const token = getToken();
+      const res = await axios.get("/api/purchase-request", {
+        headers: { Authorization: `Bearer ${token}` },
+        params: { id },
+      });
+      if (!res.data.success) throw new Error(res.data.error || "Failed to load");
+      const pr = res.data.data;
+      const mappedItems = (pr.items || []).map((it) => ({
+        ...initialState.items[0],
+        item: it.itemId,
+        itemCode: it.itemCode,
+        itemName: it.itemName,
+        quantity: it.quantity,
+        unitPrice: it.estimatedRate || 0,
+        taxOption: "GST",
+      }));
+      setFormData((prev) => ({
+        ...prev,
+        purchaseRequest: pr._id,
+        refNumber: pr.requestNumber,
+        remarks: `Generated from ${pr.requestNumber} — ${pr.title || ""}`,
+        items: mappedItems.length ? mappedItems : prev.items,
+      }));
+      toast.success(`Loaded items from ${pr.requestNumber}`);
+    } catch (err) {
+      console.error("loadFromRequest error:", err);
+      toast.error("Failed to load purchase request");
+    }
+  }, []);
+
+  const handleLinkRequest = async (pr) => {
+  if (!pr) return;
+  try {
+    const token = getToken();
+    await axios.put(`/api/purchase-quotation?id=${editId}`, { purchaseRequest: pr._id }, {
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    });
+    setFormData((prev) => ({ ...prev, purchaseRequest: pr._id }));
+    setLinkedRequestLabel(pr.requestNumber);
+    toast.success(`Linked to ${pr.requestNumber}`);
+  } catch (err) {
+    if (err.response?.data?.error === "DUPLICATE_SUPPLIER_QUOTATION") {
+      toast.error(err.response.data.message);
+    } else {
+      toast.error("Failed to link purchase request");
+    }
   }
-}, [editId]);
+};
+
+
+
+  useEffect(() => {
+    if (fromRequestId && !editId) loadFromRequest(fromRequestId);
+  }, [fromRequestId, editId, loadFromRequest]);
 
   const handleSupplierSelect = useCallback((selectedSupplier) => {
     if (!selectedSupplier) {
@@ -272,6 +344,8 @@ useEffect(() => {
       contactPerson: selectedSupplier.contactPersonName || selectedSupplier.contactPerson || "",
     }));
   }, []);
+
+  
 
   const handleInputChange = useCallback((e) => {
     const { name, value } = e.target;
@@ -317,8 +391,8 @@ useEffect(() => {
     );
     const totalItems = round(formData.items.reduce((acc, item) => acc + (parseFloat(item.totalAmount) || 0), 0));
     const gstTotal = round(
-      formData.items.reduce((acc, item) => acc + (parseFloat(item.taxOption === "IGST" ? item.igstAmount : item.gstAmount) || 0), 0
-    ));
+      formData.items.reduce((acc, item) => acc + (parseFloat(item.taxOption === "IGST" ? item.igstAmount : item.gstAmount) || 0), 0)
+    );
     const overallFreight = round(parseFloat(formData.freight) || 0);
     const rounding = round(parseFloat(formData.rounding) || 0);
     const totalDownPayment = round(parseFloat(formData.totalDownPayment) || 0);
@@ -327,6 +401,47 @@ useEffect(() => {
     const openBalance = round(grandTotal - (totalDownPayment + appliedAmounts));
     setFormData((prev) => ({ ...prev, totalBeforeDiscount, gstTotal, grandTotal, openBalance }));
   }, [formData.items, formData.freight, formData.rounding, formData.totalDownPayment, formData.appliedAmounts]);
+
+const handleCopyToPO = async () => {
+  if (!formData.supplier || !formData.supplierName || !formData.supplierCode) {
+    setError("Please select a valid supplier before copying");
+    return;
+  }
+  if (formData.items.length === 0 || formData.items.every((item) => !item.itemName || !item.item)) {
+    setError("Please add at least one valid item before copying");
+    return;
+  }
+
+  // Edit mode — the quotation already has a real saved _id, so just use it directly
+  if (editId) {
+    router.push(`/admin/purchase-order-view/new?pqId=${editId}`);
+    return;
+  }
+
+  // New/unsaved quotation — there's no real ID yet for the PO page to fetch,
+  // so save it first, then copy from the freshly created record.
+  setLoading(true);
+  setError(null);
+  try {
+    const token = getToken();
+    const payload = {
+      ...formData,
+      postingDate: formData.postingDate ? new Date(formData.postingDate).toISOString() : new Date().toISOString(),
+      validUntil: formData.validUntil ? new Date(formData.validUntil).toISOString() : null,
+      documentDate: formData.documentDate ? new Date(formData.documentDate).toISOString() : new Date().toISOString(),
+    };
+    const res = await axios.post("/api/purchase-quotation", payload, {
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    });
+    const newId = res.data.data._id;
+    toast.success("Quotation saved — opening Purchase Order...");
+    router.push(`/admin/purchase-order-view/new?pqId=${newId}`);
+  } catch (err) {
+    setError(`Failed to save quotation before copying: ${err.response?.data?.error || err.message}`);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleSubmit = async () => {
     if (!formData.supplier || !formData.supplierName || !formData.supplierCode) {
@@ -340,32 +455,33 @@ useEffect(() => {
     setLoading(true);
     setError(null);
 
+    
+
     const payload = {
       ...formData,
       postingDate: formData.postingDate ? new Date(formData.postingDate).toISOString() : new Date().toISOString(),
       validUntil: formData.validUntil ? new Date(formData.validUntil).toISOString() : null,
       documentDate: formData.documentDate ? new Date(formData.documentDate).toISOString() : new Date().toISOString(),
-    items: formData.items.map((item) => {
-  let variantData = null;
-  if (item.selectedVariantId && item.item) {
-    variantData = item.variant || {
-      variantId: item.selectedVariantId,
-      sku: item.sku || "",
-      attributes: item.variantAttributes || {},
-      variantPrice: item.unitPrice,
-      variantImageUrl: item.imageUrl,
-      variantBarcode: item.barcode,
-    };
-  }
-  return {
-    ...item,
-    // ✅ Store the variant image at the top level for future edits
-    imageUrl: item.variant?.imageUrl || item.imageUrl,
-    item: item.item || undefined,
-    warehouse: item.warehouse || undefined,
-    variant: variantData,
-  };
-}),
+      items: formData.items.map((item) => {
+        let variantData = null;
+        if (item.selectedVariantId && item.item) {
+          variantData = item.variant || {
+            variantId: item.selectedVariantId,
+            sku: item.sku || "",
+            attributes: item.variantAttributes || {},
+            variantPrice: item.unitPrice,
+            variantImageUrl: item.imageUrl,
+            variantBarcode: item.barcode,
+          };
+        }
+        return {
+          ...item,
+          imageUrl: item.variant?.imageUrl || item.imageUrl,
+          item: item.item || undefined,
+          warehouse: item.warehouse || undefined,
+          variant: variantData,
+        };
+      }),
     };
 
     const token = getToken();
@@ -376,177 +492,275 @@ useEffect(() => {
     }
 
     try {
-      if (editId) {
-        await axios.put(`/api/purchase-quotation?id=${editId}`, payload, {
-          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        });
-        toast.success("Purchase quotation updated successfully");
-      } else {
-        await axios.post("/api/purchase-quotation", payload, {
+  if (editId) {
+    await axios.put(`/api/purchase-quotation?id=${editId}`, payload, {
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    });
+    toast.success("Purchase quotation updated successfully");
+  } else {
+    await axios.post("/api/purchase-quotation", payload, {
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    });
+    toast.success("Purchase quotation added successfully");
+    setFormData(initialState);
+  }
+  router.push("/admin/PurchaseQuotationList");
+} catch (error) {
+  const errData = error.response?.data;
+  if (errData?.error === "DUPLICATE_SUPPLIER_QUOTATION") {
+    if (confirm(`${errData.message}\n\nCreate another one anyway?`)) {
+      try {
+        await axios.post("/api/purchase-quotation", { ...payload, confirmDuplicate: true }, {
           headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         });
         toast.success("Purchase quotation added successfully");
-        setFormData(initialState);
+        router.push("/admin/PurchaseQuotationList");
+      } catch (retryErr) {
+        setError(`Failed to add purchase quotation: ${retryErr.response?.data?.error || retryErr.message}`);
       }
-      router.push("/admin/PurchaseQuotationList");
-    } catch (error) {
-      console.error(error);
-      const errorMessage = error.response?.data?.error || error.message;
-      setError(`Failed to ${editId ? "update" : "add"} purchase quotation: ${errorMessage}`);
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
+    return;
+  }
+  console.error(error);
+  const errorMessage = errData?.error || error.message;
+  setError(`Failed to ${editId ? "update" : "add"} purchase quotation: ${errorMessage}`);
+} finally {
+  setLoading(false);
+}
   };
 
-  if (loading) return <div className="p-8">Loading...</div>;
-  if (error) return <div className="p-8 text-red-600">{error}</div>;
+  if (loading) return <div className="p-8 text-center text-sm font-medium text-gray-500">Loading quotation details...</div>;
 
   return (
-    <div className="m-11 p-5 shadow-xl">
-      <h1 className="text-2xl font-bold mb-4">
-        {editId ? "Edit Purchase Quotation" : "Create Purchase Quotation"}
-        {fetchingImages && <span className="ml-3 text-sm text-indigo-500">(Fetching images...)</span>}
-      </h1>
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-screen-xl mx-auto px-4 sm:px-6 py-6">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-2xl font-extrabold tracking-tight text-gray-900">
+            {editId ? "Edit Purchase Quotation" : "Create Purchase Quotation"}
+            {fetchingImages && <span className="ml-3 text-xs font-normal text-indigo-500">(Fetching item images...)</span>}
+          </h1>
+        </div>
 
-      <SectionCard icon={FaUser} title="Supplier Details" color="indigo">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="sm:col-span-1">
-            {formData.supplierName ? (
-              <ReadField label="Supplier Name" value={formData.supplierName} />
-            ) : (
-              <SupplierSearch onSelectSupplier={handleSupplierSelect} initialSupplier={null} />
-            )}
+        {error && (
+          <div className="mb-6 p-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm font-medium">
+            {error}
           </div>
-          <ReadField label="Supplier Code" value={formData.supplierCode} />
-          <ReadField label="Contact Person" value={formData.contactPerson} />
-          <div>
-            <Lbl text="Reference No." />
-            <input className={fi()} name="refNumber" value={formData.refNumber || ""} onChange={handleInputChange} placeholder="e.g. PQ-001" />
+        )}
+
+        {/* Section 1: Supplier Details */}
+        <SectionCard icon={FaUser} title="Supplier Details" color="indigo">
+          <div className="mb-4">
+  <Lbl text={editId ? "Link to Purchase Request (optional)" : "Copy from Purchase Request (optional)"} />
+  {editId && linkedRequestLabel && (
+    <p className="text-xs text-green-600 font-semibold mb-1.5">Currently linked: {linkedRequestLabel}</p>
+  )}
+  <PurchaseRequestSearch onSelect={(pr) => (editId ? handleLinkRequest(pr) : pr && loadFromRequest(pr._id))} />
+</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="sm:col-span-1">
+              {formData.supplierName ? (
+  <div>
+    <div className="flex items-center justify-between mb-1.5">
+      <label className="block text-[10.5px] font-bold uppercase tracking-wider text-gray-500">Supplier Name</label>
+    </div>
+    <div className="w-full px-3 py-2.5 rounded-lg border border-gray-200 bg-gray-50 text-sm font-medium text-gray-700 flex items-center justify-between">
+      <span>{formData.supplierName}</span>
+      <button
+        type="button"
+        onClick={() => handleSupplierSelect(null)}
+        className="text-gray-400 hover:text-red-500 transition-colors ml-2"
+        title="Change supplier"
+      >
+        <FaTimes size={12} />
+      </button>
+    </div>
+  </div>
+) : (
+  <div>
+    <Lbl text="Supplier Name" req />
+    <SupplierSearch onSelectSupplier={handleSupplierSelect} initialSupplier={null} />
+  </div>
+)}
+            </div>
+            <ReadField label="Supplier Code" value={formData.supplierCode} />
+            <ReadField label="Contact Person" value={formData.contactPerson} />
+            <div>
+              <Lbl text="Reference No." />
+              <input
+                className={fi()}
+                name="refNumber"
+                value={formData.refNumber || ""}
+                onChange={handleInputChange}
+                placeholder="e.g. PQ-001"
+              />
+            </div>
           </div>
-        </div>
-      </SectionCard>
+        </SectionCard>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6 p-5 border rounded-lg shadow-lg">
-        <div>
-          <label className="block mb-2 font-medium">Status</label>
-          <select name="status" value={formData.status || "Open"} onChange={handleInputChange} className="w-full p-2 border rounded">
-            <option value="Open">Open</option>
-            <option value="Closed">Closed</option>
-            <option value="Pending">Pending</option>
-            <option value="Cancelled">Cancelled</option>
-          </select>
-        </div>
-        <div>
-          <label className="block mb-2 font-medium">Posting Date</label>
-          <DatePicker
-            selected={formData.postingDate}
-            onChange={(date) => setFormData((prev) => ({ ...prev, postingDate: date }))}
-            dateFormat="dd-MM-yyyy"
-            className="w-full p-2 border rounded"
-          />
-        </div>
-        <div>
-          <label className="block mb-2 font-medium">Valid Until</label>
-          <DatePicker
-            selected={formData.validUntil}
-            onChange={(date) => setFormData((prev) => ({ ...prev, validUntil: date }))}
-            dateFormat="dd-MM-yyyy"
-            isClearable
-            className="w-full p-2 border rounded"
-          />
-        </div>
-        <div>
-          <label className="block mb-2 font-medium">Document Date</label>
-          <DatePicker
-            selected={formData.documentDate}
-            onChange={(date) => setFormData((prev) => ({ ...prev, documentDate: date }))}
-            dateFormat="dd-MM-yyyy"
-            className="w-full p-2 border rounded"
-          />
-        </div>
-        <div>
-          <label className="block mb-2 font-medium">Invoice Type</label>
-          <select name="invoiceType" value={formData.invoiceType || "Normal"} onChange={handleInputChange} className="w-full p-2 border rounded">
-            <option value="Normal">Normal</option>
-            <option value="POCopy">PO Copy</option>
-            <option value="GRNCopy">GRN Copy</option>
-          </select>
-        </div>
-      </div>
+        {/* Section 2: Quotation Settings */}
+        <SectionCard icon={FaFileAlt} title="Quotation Settings & Dates" color="indigo">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div>
+              <Lbl text="Status" req />
+              <select name="status" value={formData.status || "Open"} onChange={handleInputChange} className={fi()}>
+                <option value="Open">Open</option>
+                <option value="Closed">Closed</option>
+                <option value="Pending">Pending</option>
+                <option value="Cancelled">Cancelled</option>
+              </select>
+            </div>
+            <div>
+              <Lbl text="Posting Date" req />
+              <DatePicker
+                selected={formData.postingDate}
+                onChange={(date) => setFormData((prev) => ({ ...prev, postingDate: date }))}
+                dateFormat="dd-MM-yyyy"
+                className={fi()}
+              />
+            </div>
+            <div>
+              <Lbl text="Valid Until" />
+              <DatePicker
+                selected={formData.validUntil}
+                onChange={(date) => setFormData((prev) => ({ ...prev, validUntil: date }))}
+                dateFormat="dd-MM-yyyy"
+                isClearable
+                className={fi()}
+              />
+            </div>
+            <div>
+              <Lbl text="Document Date" req />
+              <DatePicker
+                selected={formData.documentDate}
+                onChange={(date) => setFormData((prev) => ({ ...prev, documentDate: date }))}
+                dateFormat="dd-MM-yyyy"
+                className={fi()}
+              />
+            </div>
+            <div>
+              <Lbl text="Invoice Type" />
+              <select name="invoiceType" value={formData.invoiceType || "Normal"} onChange={handleInputChange} className={fi()}>
+                <option value="Normal">Normal</option>
+                <option value="POCopy">PO Copy</option>
+                <option value="GRNCopy">GRN Copy</option>
+              </select>
+            </div>
+          </div>
+        </SectionCard>
 
-      <h2 className="text-xl font-semibold mt-6">Items</h2>
-      <div className="flex flex-col m-10 p-5 border rounded-lg shadow-lg">
-        <ItemSection
-          items={formData.items}
-          onItemChange={handleItemChange}
-          onAddItem={addItemRow}
-          onRemoveItem={removeItemRow}
-          computeItemValues={computeItemValues}
-        />
-      </div>
+        {/* Section 3: Items */}
+        <SectionCard icon={FaCoins} title="Items" color="indigo">
+          <div className="overflow-x-auto">
+            <ItemSection
+              items={formData.items}
+              onItemChange={handleItemChange}
+              onAddItem={addItemRow}
+              onRemoveItem={removeItemRow}
+              computeItemValues={computeItemValues}
+            />
+          </div>
+        </SectionCard>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-8 m-8 border rounded-lg shadow-lg">
-        <div>
-          <label className="block mb-2 font-medium">Sales Employee</label>
-          <input type="text" name="salesEmployee" value={formData.salesEmployee || ""} onChange={handleInputChange} className="w-full p-2 border rounded" />
-        </div>
-        <div>
-          <label className="block mb-2 font-medium">Remarks</label>
-          <textarea name="remarks" value={formData.remarks || ""} onChange={handleInputChange} className="w-full p-2 border rounded" />
-        </div>
-      </div>
+        {/* Section 4: Employee & Remarks */}
+        <SectionCard icon={FaFileAlt} title="General Information" color="indigo">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <Lbl text="Sales Employee" />
+              <input
+                type="text"
+                name="salesEmployee"
+                value={formData.salesEmployee || ""}
+                onChange={handleInputChange}
+                className={fi()}
+                placeholder="Assign employee..."
+              />
+            </div>
+            <div>
+              <Lbl text="Remarks" />
+              <textarea
+                name="remarks"
+                rows={3}
+                value={formData.remarks || ""}
+                onChange={handleInputChange}
+                className={fi()}
+                placeholder="Add quotation notes..."
+              />
+            </div>
+          </div>
+        </SectionCard>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-8 m-8 border rounded-lg shadow-lg">
-        <div>
-          <label className="block mb-2 font-medium">Taxable Amount</label>
-          <input type="number" name="totalBeforeDiscount" value={formData.totalBeforeDiscount || 0} readOnly className="w-full p-2 border rounded bg-gray-100" />
-        </div>
-        <div>
-          <label className="block mb-2 font-medium">Rounding</label>
-          <input type="number" name="rounding" value={formData.rounding || 0} onChange={handleInputChange} className="w-full p-2 border rounded" onFocus={(e) => e.target.select()} />
-        </div>
-        <div>
-          <label className="block mb-2 font-medium">GST Total</label>
-          <input type="number" name="gstTotal" value={formData.gstTotal || 0} readOnly className="w-full p-2 border rounded bg-gray-100" />
-        </div>
-        <div>
-          <label className="block mb-2 font-medium">Grand Total</label>
-          <input type="number" name="grandTotal" value={formData.grandTotal || 0} readOnly className="w-full p-2 border rounded bg-gray-100" />
-        </div>
-      </div>
+        {/* Section 5: Totals */}
+        <SectionCard icon={FaCalculator} title="Amounts & Totals" color="indigo">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div>
+              <Lbl text="Taxable Amount" />
+              <div className="w-full px-3 py-2.5 rounded-lg border border-gray-200 bg-gray-50 text-sm font-semibold text-gray-700">
+                ₹{Number(formData.totalBeforeDiscount || 0).toLocaleString()}
+              </div>
+            </div>
+            <div>
+              <Lbl text="Rounding" />
+              <input
+                type="number"
+                name="rounding"
+                value={formData.rounding || 0}
+                onChange={handleInputChange}
+                className={fi()}
+                onFocus={(e) => e.target.select()}
+              />
+            </div>
+            <div>
+              <Lbl text="GST Total" />
+              <div className="w-full px-3 py-2.5 rounded-lg border border-gray-200 bg-gray-50 text-sm font-semibold text-gray-700">
+                ₹{Number(formData.gstTotal || 0).toLocaleString()}
+              </div>
+            </div>
+            <div>
+              <Lbl text="Grand Total" />
+              <div className="w-full px-3 py-2.5 rounded-lg border border-indigo-200 bg-indigo-50 text-sm font-bold text-indigo-700">
+                ₹{Number(formData.grandTotal || 0).toLocaleString()}
+              </div>
+            </div>
+          </div>
+        </SectionCard>
 
-      <div className="flex flex-wrap gap-4 p-8 m-8 border rounded-lg shadow-lg">
-        <button onClick={handleSubmit} disabled={loading} className={`px-4 py-2 rounded text-white ${loading ? "bg-gray-400 cursor-not-allowed" : "bg-orange-400 hover:bg-orange-300"}`}>
-          {loading ? "Saving..." : editId ? "Update" : "Add"}
-        </button>
-        <button onClick={() => { setFormData(initialState); router.push("/admin/purchase-quotation"); }} className="px-4 py-2 bg-orange-400 text-white rounded hover:bg-orange-300">
-          Cancel
-        </button>
-        <button
-          onClick={() => {
-            if (!formData.supplier || !formData.supplierName || !formData.supplierCode) {
-              setError("Please select a valid supplier before copying");
-              return;
-            }
-            if (formData.items.length === 0 || formData.items.every((item) => !item.itemName || !item.item)) {
-              setError("Please add at least one valid item before copying");
-              return;
-            }
-            sessionStorage.setItem("purchaseOrderData", JSON.stringify(formData));
-            alert("Data copied to Purchase Order!");
-            router.push("/admin/purchase-order-view/new");
-          }}
-          className="px-4 py-2 bg-orange-400 text-white rounded hover:bg-orange-300"
-        >
-          Copy to Purchase Order
-        </button>
+        {/* Action Buttons (Right-aligned matching Purchase Request) */}
+        <div className="flex flex-wrap items-center justify-end gap-3 mt-8">
+          <button
+            type="button"
+            onClick={() => {
+              setFormData(initialState);
+              router.push("/admin/PurchaseQuotationList");
+            }}
+            className="px-4 py-2.5 rounded-lg bg-gray-200 text-gray-700 text-sm font-semibold hover:bg-gray-300 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleCopyToPO}
+            disabled={loading}
+            className="px-4 py-2.5 rounded-lg border border-indigo-600 text-indigo-600 bg-white text-sm font-semibold hover:bg-indigo-50 disabled:opacity-50 transition-colors"
+          >
+            {loading ? "Working..." : "Copy to Purchase Order"}
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={loading}
+            className="px-5 py-2.5 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-sm"
+          >
+            {loading ? "Saving..." : editId ? "Update" : "Add"}
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
 export default PurchaseQuotationFormWrapper;
-
 
 // "use client";
 

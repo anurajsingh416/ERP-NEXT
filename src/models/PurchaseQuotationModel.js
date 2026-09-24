@@ -28,7 +28,7 @@ const VariantReferenceSchema = new Schema({
 
 const QuotationItemSchema = new Schema({
   item: { type: Schema.Types.ObjectId, ref: "Item", required: true },
-  
+
   itemCode: { type: String, trim: true },
   itemName: { type: String, trim: true },
   itemDescription: { type: String, trim: true },
@@ -71,9 +71,10 @@ const PurchaseQuotationSchema = new Schema({
   contactPerson: { type: String, trim: true },
   refNumber: { type: String, trim: true },
   documentNumber: { type: String, required: true, unique: false },
+  purchaseRequest: { type: Schema.Types.ObjectId, ref: "PurchaseRequest" },
   status: {
     type: String,
-    enum: ["Open", "CopiedToOrder", "ConvertedToOrder", "PartiallyOrdered", "FullyOrdered"],
+    enum: ["Open", "CopiedToOrder", "ConvertedToOrder", "PartiallyOrdered", "FullyOrdered", "Rejected"],
     default: "Open",
   },
   postingDate: { type: Date, default: Date.now },
@@ -173,7 +174,7 @@ export default mongoose.models.PurchaseQuotation ||
 // const PurchaseQuotationSchema = new mongoose.Schema(
 //   {
 //     companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true },
-//     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User"}, 
+//     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User"},
 //     supplier: { type: mongoose.Schema.Types.ObjectId, ref: "Supplier", required: true }, // Ensure supplier, not supplire
 //     supplierCode: { type: String },
 //     supplierName: { type: String, required: true },

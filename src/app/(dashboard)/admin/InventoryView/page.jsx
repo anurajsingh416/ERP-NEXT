@@ -80,11 +80,24 @@ export default function InventoryView() {
     const inventoryRows = useMemo(() => {
         const rows = [];
         for (const inv of inventory) {
-            if (!inv.item || !inv.warehouse) continue;
+            // Show rows even when the referenced item / warehouse no longer exists,
+            // so stale stock records are visible instead of silently hidden.
+            const item = inv.item || {
+                _id: `missing-item-${inv._id}`,
+                itemCode: "—",
+                itemName: "Item not found (deleted or invalid reference)",
+                variants: [],
+                _missing: true,
+            };
+            const warehouse = inv.warehouse || {
+                _id: `missing-wh-${inv._id}`,
+                warehouseName: "Warehouse not found",
+                _missing: true,
+            };
 
             const baseInfo = {
-                item: inv.item,
-                warehouse: inv.warehouse,
+                item,
+                warehouse,
                 bin: inv.bin,
             };
 
@@ -96,8 +109,8 @@ export default function InventoryView() {
                     committed: v.committed || 0,
                     onOrder: v.onOrder || 0,
                 }));
-            } else if (inv.item.variants && inv.item.variants.length) {
-                variantList = inv.item.variants.map(v => ({
+            } else if (item.variants && item.variants.length) {
+                variantList = item.variants.map(v => ({
                     variantId: v._id,
                     sku: v.sku,
                     attributes: v.attributes || {},
@@ -288,12 +301,12 @@ export default function InventoryView() {
                                                     <td className="px-4 py-3 font-mono text-[11px] font-bold text-indigo-600">
                                                         <span className="bg-indigo-50 px-2 py-0.5 rounded">{row.item.itemCode}</span>
                                                      </td>
-                                                    <td className="px-4 py-3 font-bold text-gray-900">{row.item.itemName}</td>
+                                                    <td className={`px-4 py-3 font-bold ${row.item._missing ? "text-red-500 italic" : "text-gray-900"}`}>{row.item.itemName}</td>
                                                     <td className="px-4 py-3">{variantDisplay}</td>
                                                     <td className="px-4 py-3 text-gray-500 font-medium">
                                                         <div className="flex items-center gap-2">
                                                             <FaWarehouse className="text-gray-300 text-xs" />
-                                                            {row.warehouse.warehouseName}
+                                                            <span className={row.warehouse._missing ? "text-red-500 italic" : ""}>{row.warehouse.warehouseName}</span>
                                                         </div>
                                                      </td>
                                                     <td className="px-4 py-3 text-right font-mono font-black text-gray-900">{row.totalQuantity}</td>

@@ -1333,85 +1333,53 @@ function normalize(str) {
   return (str || "").toString().trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-function AICleanPreviewModal({ isOpen, onClose, onConfirm, changes, isSaving }) {
-  if (!isOpen) return null;
+// utils/buildSubBoqRows.js
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl max-w-4xl w-full p-6 shadow-2xl flex flex-col max-h-[85vh]">
-        <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-          <div>
-            <h3 className="text-base font-black text-gray-900 flex items-center gap-2">
-              ✨ Review AI Corrections
-            </h3>
-            <p className="text-xs text-gray-500">
-              Found <strong className="text-violet-600">{changes.length}</strong> item(s) with suggested corrections.
-            </p>
-          </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-sm font-bold">
-            ✕
-          </button>
-        </div>
+// Turns the flat materials[] (each with parentLink/componentCode/classification)
+// into an ordered list of rows with a `depth` for indentation, matching how
+// the mockup lays out: sub-assembly row, then its own children immediately
+// after it, then remaining direct raw materials.
+export function buildSubBoqRows(materials, rootCode) {
+  const byParent = new Map();
+  for (const m of materials || []) {
+    const key = m.parentLink;
+    if (!byParent.has(key)) byParent.set(key, []);
+    byParent.get(key).push(m);
+  }
 
-        {/* Diff Table */}
-        <div className="overflow-y-auto flex-1 my-4 border border-gray-200 rounded-xl">
-          <table className="w-full text-xs border-collapse divide-y divide-gray-200">
-            <thead className="bg-gray-50 text-[10px] font-bold uppercase text-gray-500 sticky top-0">
-              <tr>
-                <th className="px-3 py-2 text-left w-1/2 bg-red-50/50 text-red-700">Original (Current)</th>
-                <th className="px-3 py-2 text-left w-1/2 bg-emerald-50/50 text-emerald-700">AI Suggested (Cleaned)</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100 bg-white">
-              {changes.map((item, idx) => (
-                <tr key={item.id || idx} className="hover:bg-gray-50/50">
-                  {/* Original */}
-                  <td className="px-3 py-2.5 align-top border-r border-gray-100 space-y-1">
-                    <p className="font-bold text-gray-800 line-through text-red-600/80">
-                      {item.originalItemName}
-                    </p>
-                    <p className="text-[11px] text-gray-500 whitespace-pre-line">
-                      {item.originalDescription || <em className="text-gray-300">No description</em>}
-                    </p>
-                  </td>
+  const rows = [];
 
-                  {/* Cleaned */}
-                  <td className="px-3 py-2.5 align-top bg-emerald-50/20 space-y-1">
-                    <p className="font-bold text-emerald-700">
-                      {item.cleanedItemName}
-                    </p>
-                    <p className="text-[11px] text-gray-700 whitespace-pre-line">
-                      {item.cleanedDescription || <em className="text-gray-300">No description</em>}
-                    </p>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+  function walk(parentCode, depth) {
+    const children = byParent.get(parentCode) || [];
+    for (const child of children) {
+      rows.push({ ...child, depth });
+      if (child.classification === "Sub-Assembly (FG)") {
+        walk(child.componentCode, depth + 1);
+      }
+    }
+  }
 
-        {/* Footer Actions */}
-        <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isSaving}
-            className="px-4 py-2 text-xs font-bold text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            Discard
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={isSaving}
-            className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-sm"
-          >
-            {isSaving ? "Saving..." : "Apply & Save Changes"}
-          </button>
-        </div>
-      </div>
-    </div>
+  walk(rootCode, 0);
+  return rows;
+}
+
+// Total production cost = sum of qtyPerUnit * unitRate across every node
+// (sub-assemblies AND raw materials), multiplied by the parent's ordered qty.
+// Note: a sub-assembly's own cost already comes from its listed unitRate
+// (e.g. ₹2,25,000 for SUB-1000.1-A) — we do NOT also add its children's
+// costs on top, since the sub-assembly's rate is meant to represent its
+// fully-built cost. If your data instead wants sub-assembly cost to be
+// DERIVED from its children (bottom-up costing), see the note below the code.
+export function calcSubBoqRollup(materials, rootCode, parentQty = 1) {
+  const directChildren = (materials || []).filter((m) => m.parentLink === rootCode);
+  const perUnitCost = directChildren.reduce(
+    (sum, m) => sum + (Number(m.quantityPerUnit) || 0) * (Number(m.unitRate) || 0),
+    0
   );
+  return {
+    perUnitCost,
+    totalCost: perUnitCost * (Number(parentQty) || 1),
+  };
 }
 
 export default function BOQDetailsPage() {
@@ -1429,7 +1397,7 @@ export default function BOQDetailsPage() {
   const [loadingItems, setLoadingItems] = useState(false);
   const [expandedSections, setExpandedSections] = useState({});
   const [expandedMaterialSections, setExpandedMaterialSections] = useState({});
-  const [expandedBOMRows, setExpandedBOMRows] = useState({});
+  const [expandedSubBoqRows, setExpandedSubBoqRows] = useState({});
 
   // ─── Work Order Modal ────────────────────────────────────────────────
   const [isWoModalOpen, setIsWoModalOpen] = useState(false);
@@ -1591,6 +1559,15 @@ export default function BOQDetailsPage() {
       maximumFractionDigits: 0,
     }).format(num || 0);
 
+
+  const getItemCode = (itemId) => {
+    if (!itemId) return null;
+    // Handles both a populated object ({ _id, itemCode, ... }) and a raw ObjectId string
+    const id = typeof itemId === "object" ? itemId._id || itemId : itemId;
+    const found = items.find((it) => String(it._id) === String(id));
+    return found?.itemCode || (typeof itemId === "object" ? itemId.itemCode : null) || null;
+  };
+
   // ─── Hierarchy Mapping ─────────────────────────────────────────────
   const getSectionSubSectionMap = () => {
     if (!boq || !Array.isArray(boq.items)) return {};
@@ -1664,8 +1641,8 @@ export default function BOQDetailsPage() {
     setExpandedMaterialSections((prev) => ({ ...prev, [section]: !prev[section] }));
   };
 
-  const toggleBOMRow = (lineId) => {
-    setExpandedBOMRows((prev) => ({ ...prev, [lineId]: !prev[lineId] }));
+  const toggleSubBoqRow = (lineId) => {
+    setExpandedSubBoqRows((prev) => ({ ...prev, [lineId]: !prev[lineId] }));
   };
 
   const getWorkOrdersForSection = (sectionName) => {
@@ -1922,7 +1899,7 @@ export default function BOQDetailsPage() {
         itemId: matched?._id || row.itemId || null,
         itemName: matched?.itemName || row.itemName.trim(),
         quantity: parseFloat(row.quantity) || 0,
-        unit: row.unit.trim() || "nos",
+        unit: (row.unit || "").trim() || "nos",
         rate: parseFloat(row.rate) || 0,
         amount: (parseFloat(row.quantity) || 0) * (parseFloat(row.rate) || 0),
         section: addItemsSection || "Other Work",
@@ -2215,59 +2192,82 @@ export default function BOQDetailsPage() {
     const defaultWarehouseName =
       warehouses.find((w) => w._id === defaultWarehouse)?.warehouseName || "Main Warehouse";
 
+    if (invoiceTargetType === "sales" && !defaultWarehouse) {
+      toast.error("Please select a warehouse - stock is checked against it before the invoice is generated.");
+      return;
+    }
+
     const formattedItems = [];
+    const unlinkedLines = [];
+
     activeLines.forEach((line) => {
       const qty = parseFloat(line.quantity) || 0;
       if (qty <= 0) return;
 
       const validItemId = line.itemId || selectedInvoiceItem?.parentItem?.itemId || null;
+      const resolvedBoqItemCode = line.parentSerialNo || selectedInvoiceItem?.itemSerialNo || "";
+      const resolvedBoqItemName = line.parentName || selectedInvoiceItem?.itemName || "";
 
-      if (line.unitRateSupply > 0) {
-        const supplyAmt = qty * line.unitRateSupply;
-        const supplyGst = (supplyAmt * (Number(invoiceGstRate) || 0)) / 100;
+      const rateSupply = parseFloat(line.unitRateSupply) || 0;
+      const rateInstall = parseFloat(line.unitRateInstallation) || 0;
 
-        formattedItems.push({
-          item: validItemId,
-          itemCode: line.srNo || "ITEM",
-          itemName: `${line.description} (Supply)`,
-          quantity: qty,
-          unitPrice: line.unitRateSupply,
-          discount: 0,
-          amount: supplyAmt,
-          totalAmount: supplyAmt,
-          taxOption: "GST",
-          gstRate: Number(invoiceGstRate) || 0,
-          cgstAmount: supplyGst / 2,
-          sgstAmount: supplyGst / 2,
-          taxAmount: supplyGst,
-          warehouse: defaultWarehouse,
-          warehouseName: defaultWarehouseName,
-        });
+      if (
+        invoiceTargetType === "sales" &&
+        !validItemId &&
+        (rateSupply > 0 || rateInstall > 0)
+      ) {
+        unlinkedLines.push(`${line.srNo ? `${line.srNo} ` : ""}${line.description || "Untitled line"}`.trim());
+        return;
       }
 
-      if (line.unitRateInstallation > 0) {
-        const installAmt = qty * line.unitRateInstallation;
-        const installGst = (installAmt * (Number(invoiceGstRate) || 0)) / 100;
+      if (rateSupply <= 0 && rateInstall <= 0) return;
 
-        formattedItems.push({
-          item: validItemId,
-          itemCode: line.srNo || "ITEM",
-          itemName: `${line.description} (Installation)`,
-          quantity: qty,
-          unitPrice: line.unitRateInstallation,
-          discount: 0,
-          amount: installAmt,
-          totalAmount: installAmt,
-          taxOption: "GST",
-          gstRate: Number(invoiceGstRate) || 0,
-          cgstAmount: installGst / 2,
-          sgstAmount: installGst / 2,
-          taxAmount: installGst,
-          warehouse: defaultWarehouse,
-          warehouseName: defaultWarehouseName,
-        });
-      }
+      const boqReference = {
+        boqId: boq._id,
+        boqItemCode: resolvedBoqItemCode,
+        boqItemName: resolvedBoqItemName,
+        boqSrNo: line.srNo || "",
+        generatedFromBOQ: true,
+      };
+
+      const amountSupply = qty * rateSupply;
+      const amountInstallation = qty * rateInstall;
+      const lineTotal = amountSupply + amountInstallation;
+      const lineGst = (lineTotal * (Number(invoiceGstRate) || 0)) / 100;
+
+      formattedItems.push({
+        item: validItemId,
+        itemCode: resolvedBoqItemCode || "ITEM",
+        itemName: line.description,
+        itemDescription: line.description || "",
+        boqLineType: rateSupply > 0 && rateInstall > 0 ? "Supply+Install" : rateSupply > 0 ? "Supply" : "Installation",
+        boqReference,
+        quantity: qty,
+        unitRateSupply: rateSupply,
+        unitRateInstallation: rateInstall,
+        amountSupply,
+        amountInstallation,
+        unitPrice: rateSupply + rateInstall,
+        totalAmount: lineTotal,
+        taxOption: "GST",
+        gstRate: Number(invoiceGstRate) || 0,
+        gstAmount: lineGst,
+        cgstAmount: lineGst / 2,
+        sgstAmount: lineGst / 2,
+        warehouse: defaultWarehouse,
+        warehouseName: defaultWarehouseName,
+      });
     });
+
+    if (unlinkedLines.length > 0) {
+      const preview = unlinkedLines.slice(0, 3).join(", ");
+      const more = unlinkedLines.length > 3 ? ` and ${unlinkedLines.length - 3} more` : "";
+      toast.error(
+        `Cannot generate invoice: ${preview}${more} ${unlinkedLines.length > 1 ? "are" : "is"} not linked to an inventory item, so stock cannot be verified. Link an item to the BOQ line first.`,
+        { autoClose: 9000 }
+      );
+      return;
+    }
 
     if (formattedItems.length === 0) {
       toast.error("All selected items have 0 billable quantities or rates.");
@@ -2290,6 +2290,7 @@ export default function BOQDetailsPage() {
       if (invoiceTargetType === "sales") {
         const salesPayload = {
           sourceModel: "delivery",
+          isBoqInvoice: true,
           sourceId: boq._id,
           customer: invoiceCustomerId,
           customerName: invoiceCustomerName || "Customer",
@@ -2383,7 +2384,25 @@ export default function BOQDetailsPage() {
       }
     } catch (err) {
       console.error("Invoice generation error:", err);
-      toast.error(err.response?.data?.error || err.message || "Failed to create invoice");
+      const shortages = err.response?.data?.shortages;
+      if (Array.isArray(shortages) && shortages.length > 0) {
+        toast.error(
+          <div>
+            <div className="font-bold">Not enough stock - invoice not generated</div>
+            <ul className="mt-1 list-disc pl-4 text-[11px]">
+              {shortages.map((s, i) => (
+                <li key={i}>
+                  {s.itemName}
+                  {s.itemCode ? ` (${s.itemCode})` : ""}: need {s.required}, available {s.available} in {s.warehouseName}
+                </li>
+              ))}
+            </ul>
+          </div>,
+          { autoClose: 12000 }
+        );
+      } else {
+        toast.error(err.response?.data?.error || err.message || "Failed to create invoice");
+      }
     } finally {
       setGeneratingInvoice(false);
     }
@@ -2626,6 +2645,7 @@ export default function BOQDetailsPage() {
                               <thead className="bg-slate-100 text-slate-600 text-[10px] font-bold uppercase tracking-wider border-b border-gray-200 sticky top-0 z-10">
                                 <tr>
                                   <th className="px-3 py-2 text-center w-[75px]">Sr. No.</th>
+                                  <th className="px-3 py-2 text-center w-[90px]">Item Code</th>
                                   <th className="px-3 py-2 text-left min-w-[280px]">Description</th>
                                   <th className="px-2 py-2 text-center w-[60px]">Unit</th>
                                   <th className="px-2 py-2 text-center w-[60px]">Qty</th>
@@ -2649,7 +2669,7 @@ export default function BOQDetailsPage() {
                                           <td className="px-3 py-1.5 text-center font-black text-xs text-indigo-950 font-mono">
                                             {parent.itemSerialNo || "—"}
                                           </td>
-                                          <td colSpan={7} className="px-3 py-1.5">
+                                          <td colSpan={8} className="px-3 py-1.5">
                                             <span className="font-bold text-gray-900 text-xs tracking-tight">
                                               {parent.itemName}
                                             </span>
@@ -2666,7 +2686,7 @@ export default function BOQDetailsPage() {
                                             SPEC
                                           </td>
                                           <td
-                                            colSpan={8}
+                                            colSpan={9}
                                             className="px-4 py-2 text-[11px] text-amber-950 leading-relaxed italic whitespace-pre-line"
                                           >
                                             <strong className="not-italic text-amber-900 uppercase tracking-wider text-[10px] block mb-0.5">
@@ -2688,8 +2708,8 @@ export default function BOQDetailsPage() {
                                           line.amount ||
                                           (line.amountSupply || 0) + (line.amountInstallation || 0);
 
-                                        const hasBOM = Array.isArray(line.materials) && line.materials.length > 0;
-                                        const isBOMOpen = !!expandedBOMRows[line._id];
+                                        const hasSubBoq = Array.isArray(line.materials) && line.materials.length > 0;
+                                        const isSubBoqOpen = !!expandedSubBoqRows[line._id];
 
                                         return (
                                           <Fragment key={line._id}>
@@ -2700,19 +2720,22 @@ export default function BOQDetailsPage() {
                                               <td className="px-3 py-1.5 text-center font-mono text-[11px] text-gray-500 align-top">
                                                 {line.srNo || "—"}
                                               </td>
+                                              <td className="px-3 py-1.5 text-center font-mono text-[11px] text-indigo-600 align-top">
+                                                {getItemCode(line.itemId) || "—"}
+                                              </td>
                                               <td className="px-3 py-1.5 text-[11px] text-gray-800 align-top leading-relaxed">
                                                 <div className="flex items-start justify-between gap-2">
                                                   <div className="flex-1 whitespace-pre-line">
                                                     {line.description}
                                                   </div>
-                                                  {hasBOM && (
+                                                  {hasSubBoq && (
                                                     <button
                                                       type="button"
-                                                      onClick={() => toggleBOMRow(line._id)}
+                                                      onClick={() => toggleSubBoqRow(line._id)}
                                                       className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-100 px-1.5 py-0.5 rounded shrink-0 transition-colors cursor-pointer"
                                                     >
                                                       <FaBoxes size={10} />
-                                                      {line.materials.length} BOM
+                                                      {line.materials.length} Sub BOQ
                                                     </button>
                                                   )}
                                                 </div>
@@ -2754,7 +2777,7 @@ export default function BOQDetailsPage() {
                                               </td>
                                             </tr>
 
-                                            {isBOMOpen && hasBOM && (
+                                            {/* {isSubBoqOpen && hasSubBoq && (
                                               <tr className="bg-slate-50/80 border-y border-gray-200">
                                                 <td colSpan={9} className="px-6 py-2.5">
                                                   <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-inner">
@@ -2780,7 +2803,144 @@ export default function BOQDetailsPage() {
                                                   </div>
                                                 </td>
                                               </tr>
-                                            )}
+                                            )} */}
+
+                                            {isSubBoqOpen && hasSubBoq && (() => {
+                                              const isHierarchical = line.materials.some((m) => m.parentLink);
+
+                                              if (!isHierarchical) {
+                                                // ── Original flat raw-material list (non-Sheet2 BOQs) ──
+                                                return (
+                                                  <tr className="bg-slate-50/80 border-y border-gray-200">
+                                                    <td colSpan={10} className="px-6 py-2.5">
+                                                      <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-inner">
+                                                        <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2 flex items-center gap-1.5">
+                                                          <FaBoxes size={11} className="text-indigo-500" />
+                                                          Allocated Raw Materials & Recipe
+                                                        </p>
+                                                        <div className="space-y-1.5">
+                                                          {line.materials.map((mat, mIdx) => (
+                                                            <div
+                                                              key={mIdx}
+                                                              className="flex items-center justify-between text-xs text-gray-700 border-b border-gray-50 pb-1"
+                                                            >
+                                                              <span className="font-semibold text-gray-800">
+                                                                {mat.rawMaterialName || "Material"}
+                                                              </span>
+                                                              <span className="font-mono text-gray-500 text-[11px]">
+                                                                {mat.quantityPerUnit} {mat.uom || "nos"} @ {formatCurrency(mat.unitRate)}
+                                                              </span>
+                                                            </div>
+                                                          ))}
+                                                        </div>
+                                                      </div>
+                                                    </td>
+                                                  </tr>
+                                                );
+                                              }
+
+                                              // ── Nested multi-tier Sub BOQ (Sheet2-derived) ──
+                                              const rootCode = line.srNo;
+                                              const subBoqRows = buildSubBoqRows(line.materials, rootCode);
+                                              const { totalCost } = calcSubBoqRollup(line.materials, rootCode, line.quantity);
+                                              const contractRevenue = Number(line.totalAmount) || Number(line.amount) || 0;
+                                              const grossMarginPct =
+                                                contractRevenue > 0 ? ((contractRevenue - totalCost) / contractRevenue) * 100 : 0;
+
+                                              return (
+                                                <tr className="bg-slate-50/80 border-y border-gray-200">
+                                                  <td colSpan={10} className="px-6 py-2.5">
+                                                    <div className="border-2 border-blue-300 rounded-xl bg-blue-50/40 overflow-hidden">
+                                                      <div className="flex items-center justify-between px-4 py-2 bg-blue-100/70 border-b border-blue-200">
+                                                        <div>
+                                                          <div className="text-xs font-bold text-blue-900">
+                                                            Sub BOQ (Multi-Tier Bill of Materials)
+                                                          </div>
+                                                          <div className="text-[10px] text-blue-700">
+                                                            Linked Parent: [{rootCode}] {line.description} &nbsp;|&nbsp; Manufactured Quantity: {line.quantity} Units
+                                                          </div>
+                                                        </div>
+                                                        <span className="text-[9px] font-bold px-2 py-1 rounded bg-white border border-blue-300 text-blue-700 uppercase tracking-wider">
+                                                          Linked Sub BOQ Active
+                                                        </span>
+                                                      </div>
+
+                                                      <div className="overflow-x-auto">
+                                                        <table className="w-full text-[11px]">
+                                                          <thead>
+                                                            <tr className="text-[9px] uppercase text-gray-500 bg-white border-b">
+                                                              <th className="px-2.5 py-1.5 text-left">Parent Link</th>
+                                                              <th className="px-2.5 py-1.5 text-left">Component Code</th>
+                                                              <th className="px-2.5 py-1.5 text-left">Level / Type</th>
+                                                              <th className="px-2.5 py-1.5 text-left">Material / Component Description</th>
+                                                              <th className="px-2.5 py-1.5 text-right">UOM</th>
+                                                              <th className="px-2.5 py-1.5 text-right">Qty/Unit</th>
+                                                              <th className="px-2.5 py-1.5 text-right">Unit Cost</th>
+                                                              <th className="px-2.5 py-1.5 text-right">Total Cost ({line.quantity} units)</th>
+                                                              <th className="px-2.5 py-1.5 text-left">Source</th>
+                                                            </tr>
+                                                          </thead>
+                                                          <tbody>
+                                                            {subBoqRows.map((r) => {
+                                                              const isSubAssembly = r.classification === "Sub-Assembly (FG)";
+                                                              const rowTotal =
+                                                                (Number(r.quantityPerUnit) || 0) * (Number(r.unitRate) || 0) * (Number(line.quantity) || 1);
+                                                              return (
+                                                                <tr
+                                                                  key={r._id || `${r.parentLink}-${r.componentCode}`}
+                                                                  className={isSubAssembly ? "bg-yellow-50" : "bg-white"}
+                                                                >
+                                                                  <td className="px-2.5 py-1.5 text-blue-700 font-mono">{r.parentLink}</td>
+                                                                  <td className="px-2.5 py-1.5 font-mono">
+                                                                    <span
+                                                                      className={
+                                                                        isSubAssembly
+                                                                          ? "px-1.5 py-0.5 rounded border border-amber-400 bg-amber-100 text-amber-800"
+                                                                          : "px-1.5 py-0.5 rounded border border-gray-300 bg-gray-100 text-gray-700"
+                                                                      }
+                                                                    >
+                                                                      {r.componentCode}
+                                                                    </span>
+                                                                  </td>
+                                                                  <td className="px-2.5 py-1.5">
+                                                                    {isSubAssembly ? (
+                                                                      <span className="font-medium text-amber-700">Sub-Assembly (FG)</span>
+                                                                    ) : (
+                                                                      <span className="text-gray-500">Raw Material</span>
+                                                                    )}
+                                                                  </td>
+                                                                  <td className="px-2.5 py-1.5" style={{ paddingLeft: `${10 + r.depth * 14}px` }}>
+                                                                    {r.rawMaterialName}
+                                                                  </td>
+                                                                  <td className="px-2.5 py-1.5 text-right">{r.uom}</td>
+                                                                  <td className="px-2.5 py-1.5 text-right">{r.quantityPerUnit}</td>
+                                                                  <td className="px-2.5 py-1.5 text-right">{formatCurrency(r.unitRate)}</td>
+                                                                  <td className="px-2.5 py-1.5 text-right font-medium">{formatCurrency(rowTotal)}</td>
+                                                                  <td className="px-2.5 py-1.5 text-gray-500">{r.sourcingChannel}</td>
+                                                                </tr>
+                                                              );
+                                                            })}
+                                                          </tbody>
+                                                        </table>
+                                                      </div>
+
+                                                      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-white border-t text-[11px]">
+                                                        <div>
+                                                          <span className="text-gray-600">Total Production &amp; Material Cost for Item {rootCode} ({line.quantity} units):</span>{" "}
+                                                          <span className="font-bold text-green-700">{formatCurrency(totalCost)}</span>
+                                                        </div>
+                                                        <div className="text-gray-600">
+                                                          Contract Revenue (Main BOQ): <span className="font-medium">{formatCurrency(contractRevenue)}</span>
+                                                        </div>
+                                                        <div className="text-blue-700 font-bold">
+                                                          Gross Margin: {grossMarginPct.toFixed(1)}%
+                                                        </div>
+                                                      </div>
+                                                    </div>
+                                                  </td>
+                                                </tr>
+                                              );
+                                            })()}
                                           </Fragment>
                                         );
                                       })}

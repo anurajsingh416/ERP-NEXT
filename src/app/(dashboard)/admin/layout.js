@@ -133,6 +133,9 @@ const MODULE_ROUTE_MAP = {
   "payroll": [
     { label: "Payroll",             path: "/admin/hr/payroll",               needsView: true },
   ],
+  "Purchase Request": [
+    { label: "Request View",       path: "/admin/purchase-request-view",       needsView: true },
+  ],
   "Purchase Quotation": [
     { label: "Quotation View",     path: "/admin/PurchaseQuotationList",      needsView: true },
   ],
@@ -487,6 +490,7 @@ export default function Layout({ children }) {
 
                 <Section title="Transactions View" icon={<HiOutlineCreditCard />} isOpen={openMenu === "transactionsView"} onToggle={() => toggleMenu("transactionsView")}>
                   <Submenu isOpen={!!openSubmenus["tvSales"]} onToggle={() => toggleSubmenu("tvSales")} icon={<HiShoppingCart />} label="Sales">
+                    <SidebarItem href="/admin/sales-dashboard" icon={<HiChartSquareBar />} label="Dashboard" onClick={closeSidebar} isActive={isActive("/admin/sales-dashboard")} />
                     <SidebarItem href="/admin/sales-quotation-view" icon={<SiCivicrm />} label="Quotation View" onClick={closeSidebar} isActive={isActive("/admin/sales-quotation-view")} />
                     <SidebarItem href="/admin/sales-order-view" icon={<HiPuzzle />} label="Order View" onClick={closeSidebar} isActive={isActive("/admin/sales-order-view")} />
                     <SidebarItem href="/admin/pos" icon={<HiCube />} label="POS Invoice" onClick={closeSidebar} isActive={isActive("/admin/pos")} />
@@ -498,6 +502,8 @@ export default function Layout({ children }) {
                     <SidebarItem href="/admin/sales-board" icon={<HiChartSquareBar />} label="Sales Board" onClick={closeSidebar} isActive={isActive("/admin/sales-board")} />
                   </Submenu>
                   <Submenu isOpen={!!openSubmenus["tvPurchase"]} onToggle={() => toggleSubmenu("tvPurchase")} icon={<GiStockpiles />} label="Purchase">
+                    <SidebarItem href="/admin/purchase-dashboard" icon={<HiChartSquareBar />} label="Dashboard" onClick={closeSidebar} isActive={isActive("/admin/purchase-dashboard")} />
+                    <SidebarItem href="/admin/purchase-request-view" icon={<SiCivicrm />} label="Purchase Request" onClick={closeSidebar} isActive={isActive("/admin/purchase-request-view")} />
                     <SidebarItem href="/admin/PurchaseQuotationList" icon={<SiCivicrm />} label="Quotation View" onClick={closeSidebar} isActive={isActive("/admin/PurchaseQuotationList")} />
                     <SidebarItem href="/admin/purchase-order-view" icon={<HiPuzzle />} label="Order View" onClick={closeSidebar} isActive={isActive("/admin/purchase-order-view")} />
                     <SidebarItem href="/admin/grn-view" icon={<HiOutlineCube />} label="GRN View" onClick={closeSidebar} isActive={isActive("/admin/grn-view")} />
@@ -526,6 +532,7 @@ export default function Layout({ children }) {
                 </Section>
 
                 <Section title="Stock" icon={<HiOutlineCube />} isOpen={openMenu === "Stock"} onToggle={() => toggleMenu("Stock")}>
+                  <SidebarItem href="/admin/stock-dashboard" icon={<HiChartSquareBar />} label="Dashboard" onClick={closeSidebar} isActive={isActive("/admin/stock-dashboard")} />
                   <SidebarItem href="/admin/InventoryView" icon={<HiOutlineLibrary />} label="Inventory View" onClick={closeSidebar} isActive={isActive("/admin/InventoryView")} />
                   <SidebarItem href="/admin/InventoryEntry" icon={<HiOutlineLibrary />} label="Inventory Entry" onClick={closeSidebar} isActive={isActive("/admin/InventoryEntry")} />
                   <SidebarItem href="/admin/InventoryAdjustmentsView" icon={<HiOutlineLibrary />} label="Inventory Ledger" onClick={closeSidebar} isActive={isActive("/admin/InventoryAdjustmentsView")} />

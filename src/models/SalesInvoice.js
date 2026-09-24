@@ -13,6 +13,7 @@ const addressSchema = new Schema({
 }, { _id: false });
 
 // Item sub‑schema (invoice line item)
+// Item sub‐schema (invoice line item)
 const InvoiceItemSchema = new Schema({
   item: { type: Schema.Types.ObjectId, ref: "Item", required: true },
   imageUrl: { type: String, default: "" },
@@ -20,6 +21,16 @@ const InvoiceItemSchema = new Schema({
   itemName: { type: String },
   itemDescription: { type: String },
   quantity: { type: Number, default: 0 },
+
+  // --- Rate/Amount split (Supply vs Installation) ---
+  unitRateSupply: { type: Number, default: 0 },
+  unitRateInstallation: { type: Number, default: 0 },
+  amountSupply: { type: Number, default: 0 },
+  amountInstallation: { type: Number, default: 0 },
+  boqLineType: { type: String, enum: ["Supply", "Installation", "Supply+Install", ""], default: "" },
+
+  // unitPrice/totalAmount kept as the combined total for backward compatibility
+  // with anything (reports, PDFs, older invoices) still reading these two fields
   unitPrice: { type: Number, default: 0 },
   discount: { type: Number, default: 0 },
   freight: { type: Number, default: 0 },
@@ -37,6 +48,16 @@ const InvoiceItemSchema = new Schema({
   warehouseName: { type: String },
   warehouseCode: { type: String },
   stockAdded: { type: Boolean, default: false },
+
+  // --- BOQ origin reference (optional — stays empty on manual invoices) ---
+  boqReference: {
+    boqId: { type: Schema.Types.ObjectId, ref: "BOQ", default: null },
+    boqItemCode: { type: String, default: "" },
+    boqItemName: { type: String, default: "" },
+    boqSrNo: { type: String, default: "" },
+    generatedFromBOQ: { type: Boolean, default: false }
+  },
+
   // Variant support
   variant: {
     variantId: { type: Schema.Types.ObjectId, ref: "Variant" },
@@ -47,13 +68,11 @@ const InvoiceItemSchema = new Schema({
     variantBarcode: { type: String }
   },
   selectedVariantId: { type: String, default: null },
-  // Bin location (if warehouse uses bins)
   selectedBin: {
     _id: { type: Schema.Types.ObjectId },
     code: { type: String },
     name: { type: String }
   },
-  // Additional fields for tracking
   allowedQuantity: { type: Number, default: 0 },
   receivedQuantity: { type: Number, default: 0 },
   pendingQuantity: { type: Number, default: 0 },

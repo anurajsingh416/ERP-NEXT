@@ -44,38 +44,77 @@ export async function POST(req) {
     if (!project) return NextResponse.json({ success: false, message: "Project not found" }, { status: 404 });
 
     // Build items from BOQ, checking inventory stock
+    // const items = [];
+    // for (const boqItem of boq.items) {
+    //   let inventoryItem = null;
+    //   let availableQty = 0;
+    //   let uom = boqItem.unit || "nos";
+
+    //   if (boqItem.itemId) {
+    //     inventoryItem = await Item.findOne({ _id: boqItem.itemId, companyId: user.companyId });
+    //     if (inventoryItem) {
+    //       // Sum available quantity
+    //       availableQty = inventoryItem.quantity || 0;
+    //       uom = inventoryItem.uom || boqItem.unit || "nos";
+    //     }
+    //   }
+
+    //   const quantityRequired = boqItem.quantity || 0;
+    //   const quantityToPurchase = Math.max(0, quantityRequired - availableQty);
+
+    //   // Only add if quantity to purchase > 0 or item not in inventory
+    //   if (quantityToPurchase > 0 || !inventoryItem) {
+    //     items.push({
+    //       itemId: inventoryItem?._id || null,
+    //       itemName: boqItem.itemName || boqItem.description || "Unknown Material",
+    //       uom: uom,
+    //       quantityRequired: quantityRequired,
+    //       quantityAvailable: availableQty,
+    //       quantityToPurchase: quantityToPurchase > 0 ? quantityToPurchase : quantityRequired,
+    //       estimatedRate: boqItem.rate || 0,
+    //       estimatedAmount: (boqItem.rate || 0) * (quantityToPurchase > 0 ? quantityToPurchase : quantityRequired),
+    //       boqReference: boqItem.description || boqItem.itemName,
+    //       remarks: `Generated from BOQ #${boq.boqNumber}`,
+    //     });
+    //   }
+    // }
+
     const items = [];
     for (const boqItem of boq.items) {
-      let inventoryItem = null;
-      let availableQty = 0;
-      let uom = boqItem.unit || "nos";
+      for (const desc of boqItem.descriptions || []) {
+        // Skip header/scope-only lines (no real quantity or rate)
+        if (!desc.quantity && !desc.unitRateSupply && !desc.unitRateInstallation) continue;
 
-      if (boqItem.itemId) {
-        inventoryItem = await Item.findOne({ _id: boqItem.itemId, companyId: user.companyId });
-        if (inventoryItem) {
-          // Sum available quantity
-          availableQty = inventoryItem.quantity || 0;
-          uom = inventoryItem.uom || boqItem.unit || "nos";
+        let inventoryItem = null;
+        let availableQty = 0;
+        let uom = desc.unit || "nos";
+
+        if (desc.itemId) {
+          inventoryItem = await Item.findOne({ _id: desc.itemId, companyId: user.companyId });
+          if (inventoryItem) {
+            availableQty = inventoryItem.quantity || 0;
+            uom = inventoryItem.uom || desc.unit || "nos";
+          }
         }
-      }
 
-      const quantityRequired = boqItem.quantity || 0;
-      const quantityToPurchase = Math.max(0, quantityRequired - availableQty);
+        const quantityRequired = desc.quantity || 0;
+        const quantityToPurchase = Math.max(0, quantityRequired - availableQty);
+        const rate = (desc.unitRateSupply || 0) + (desc.unitRateInstallation || 0);
 
-      // Only add if quantity to purchase > 0 or item not in inventory
-      if (quantityToPurchase > 0 || !inventoryItem) {
-        items.push({
-          itemId: inventoryItem?._id || null,
-          itemName: boqItem.itemName || boqItem.description || "Unknown Material",
-          uom: uom,
-          quantityRequired: quantityRequired,
-          quantityAvailable: availableQty,
-          quantityToPurchase: quantityToPurchase > 0 ? quantityToPurchase : quantityRequired,
-          estimatedRate: boqItem.rate || 0,
-          estimatedAmount: (boqItem.rate || 0) * (quantityToPurchase > 0 ? quantityToPurchase : quantityRequired),
-          boqReference: boqItem.description || boqItem.itemName,
-          remarks: `Generated from BOQ #${boq.boqNumber}`,
-        });
+        if (quantityToPurchase > 0 || !inventoryItem) {
+          items.push({
+            itemId: inventoryItem?._id || null,
+            itemName: boqItem.itemName || desc.description || "Unknown Material",
+            uom,
+            quantityRequired,
+            quantityAvailable: availableQty,
+            quantityToPurchase: quantityToPurchase > 0 ? quantityToPurchase : quantityRequired,
+            estimatedRate: rate,
+            estimatedAmount: rate * (quantityToPurchase > 0 ? quantityToPurchase : quantityRequired),
+            boqReference: desc.description || boqItem.itemName,
+            remarks: `Generated from BOQ #${boq.boqNumber}`,
+          });
+        }
       }
     }
 

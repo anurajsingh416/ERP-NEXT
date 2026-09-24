@@ -112,17 +112,57 @@ export async function POST(req) {
       });
     }
 
+    if (jsonData.purchaseRequest && mongoose.Types.ObjectId.isValid(jsonData.purchaseRequest)) {
+      const existing = await PurchaseQuotation.findOne({
+        companyId,
+        purchaseRequest: jsonData.purchaseRequest,
+        supplier: jsonData.supplier,
+        status: { $ne: "Rejected" },
+      });
+      if (existing && !jsonData.confirmDuplicate) {
+        await session.abortTransaction();
+        return NextResponse.json(
+          {
+            success: false,
+            error: "DUPLICATE_SUPPLIER_QUOTATION",
+            message: `${jsonData.supplierName || "This supplier"} already has an open quotation (${existing.documentNumber}) for this purchase request.`,
+            existingId: existing._id,
+          },
+          { status: 409 }
+        );
+      }
+    }
+
     const finalAttachments = [...(jsonData.existingFiles || []), ...uploadedFiles];
-    const documentNumber = await generateDocumentNumber(companyId, session);
 
-    const quotationData = {
-      ...jsonData,
-      companyId,
-      documentNumber,
-      attachments: finalAttachments,
-    };
-
-    const [quotation] = await PurchaseQuotation.create([quotationData], { session });
+    let quotation, retries = 5;
+    while (retries > 0) {
+      try {
+        const documentNumber = await generateDocumentNumber(companyId, session);
+        const quotationData = {
+          ...jsonData,
+          companyId,
+          documentNumber,
+          attachments: finalAttachments,
+        };
+        [quotation] = await PurchaseQuotation.create([quotationData], { session });
+        break; // success
+      } catch (err) {
+        if (err.code === 11000 && retries > 1) {
+          retries--;
+          continue; // duplicate documentNumber — counter was out of sync, try the next one
+        }
+        throw err; // real error, or out of retries — bubble up
+      }
+    }
+    if (jsonData.purchaseRequest && mongoose.Types.ObjectId.isValid(jsonData.purchaseRequest)) {
+      const PurchaseRequest = (await import("@/models/PurchaseRequestModel")).default;
+      await PurchaseRequest.findOneAndUpdate(
+        { _id: jsonData.purchaseRequest, companyId, status: { $in: ["Draft", "Pending"] } },
+        { $push: { linkedQuotationIds: quotation._id }, status: "Quoted" },
+        { session }
+      );
+    }
 
     await session.commitTransaction();
     session.endSession();
@@ -164,7 +204,7 @@ export async function GET(req) {
       const quotation = await PurchaseQuotation.findOne({ _id: id, companyId })
         .populate("supplier", "supplierCode supplierName contactPerson")
         .populate("items.item", "itemCode itemName unitPrice imageUrl variants")
-        .populate('items.variant'); 
+        .populate('items.variant');
       if (!quotation) {
         return NextResponse.json({ success: false, error: "Quotation not found" }, { status: 404 });
       }
@@ -172,25 +212,25 @@ export async function GET(req) {
     }
 
     // Stats endpoint – robust sum with $toDouble
-if (stats) {
-  const total = await PurchaseQuotation.countDocuments({ companyId });
-  const open = await PurchaseQuotation.countDocuments({ companyId, status: "Open" });
-  const copiedToOrder = await PurchaseQuotation.countDocuments({ companyId, status: "CopiedToOrder" });
-  const convertedToOrder = await PurchaseQuotation.countDocuments({ companyId, status: "ConvertedToOrder" });
-  const partiallyOrdered = await PurchaseQuotation.countDocuments({ companyId, status: "PartiallyOrdered" });
-  const fullyOrdered = await PurchaseQuotation.countDocuments({ companyId, status: "FullyOrdered" });
+    if (stats) {
+      const total = await PurchaseQuotation.countDocuments({ companyId });
+      const open = await PurchaseQuotation.countDocuments({ companyId, status: "Open" });
+      const copiedToOrder = await PurchaseQuotation.countDocuments({ companyId, status: "CopiedToOrder" });
+      const convertedToOrder = await PurchaseQuotation.countDocuments({ companyId, status: "ConvertedToOrder" });
+      const partiallyOrdered = await PurchaseQuotation.countDocuments({ companyId, status: "PartiallyOrdered" });
+      const fullyOrdered = await PurchaseQuotation.countDocuments({ companyId, status: "FullyOrdered" });
 
-  const totalValueAgg = await PurchaseQuotation.aggregate([
-    { $match: { companyId } },
-    { $group: { _id: null, totalValue: { $sum: "$grandTotal" } } }
-  ]);
-  const totalValue = totalValueAgg[0]?.totalValue || 0;
+      const totalValueAgg = await PurchaseQuotation.aggregate([
+        { $match: { companyId } },
+        { $group: { _id: null, totalValue: { $sum: "$grandTotal" } } }
+      ]);
+      const totalValue = totalValueAgg[0]?.totalValue || 0;
 
-  return NextResponse.json({
-    success: true,
-    data: { total, open, copiedToOrder, convertedToOrder, partiallyOrdered, fullyOrdered, totalValue }
-  });
-}
+      return NextResponse.json({
+        success: true,
+        data: { total, open, copiedToOrder, convertedToOrder, partiallyOrdered, fullyOrdered, totalValue }
+      });
+    }
 
     // Paginated list
     const page = Math.max(parseInt(searchParams.get("page")) || 1, 1);
@@ -198,15 +238,21 @@ if (stats) {
     const search = searchParams.get("search") || "";
     const statusFilter = searchParams.get("status");
 
+    const purchaseRequestId = searchParams.get("purchaseRequestId");
+
     const query = { companyId };
+
+
+    if (statusFilter && statusFilter !== "All") {
+      query.status = statusFilter;
+    }
+
+    if (purchaseRequestId) query.purchaseRequest = purchaseRequestId;
     if (search) {
       query.$or = [
         { supplierName: { $regex: search, $options: "i" } },
         { documentNumber: { $regex: search, $options: "i" } },
       ];
-    }
-    if (statusFilter && statusFilter !== "All") {
-      query.status = statusFilter;
     }
 
     const skip = (page - 1) * limit;
@@ -314,6 +360,33 @@ export async function PUT(req) {
     if (!updatedQuotation) {
       await session.abortTransaction();
       return NextResponse.json({ success: false, error: "Quotation not found" }, { status: 404 });
+    }
+
+    if (jsonData.purchaseRequest && mongoose.Types.ObjectId.isValid(jsonData.purchaseRequest)) {
+      const PurchaseRequest = (await import("@/models/PurchaseRequestModel")).default;
+      await PurchaseRequest.findOneAndUpdate(
+        { _id: jsonData.purchaseRequest, companyId },
+        { $addToSet: { linkedQuotationIds: updatedQuotation._id }, $set: { status: "Quoted" } },
+        { session }
+      );
+    }
+
+    if (jsonData.purchaseRequest && mongoose.Types.ObjectId.isValid(jsonData.purchaseRequest)) {
+      const current = await PurchaseQuotation.findOne({ _id: id, companyId }).select("supplier");
+      const existing = await PurchaseQuotation.findOne({
+        companyId,
+        purchaseRequest: jsonData.purchaseRequest,
+        supplier: current?.supplier,
+        status: { $ne: "Rejected" },
+        _id: { $ne: id },
+      });
+      if (existing) {
+        await session.abortTransaction();
+        return NextResponse.json(
+          { success: false, error: "DUPLICATE_SUPPLIER_QUOTATION", message: `This supplier already has a quotation (${existing.documentNumber}) linked to this request.` },
+          { status: 409 }
+        );
+      }
     }
 
     await session.commitTransaction();

@@ -717,6 +717,7 @@
 //     );
 //   }
 // }
+
 import { NextResponse } from "next/server";
 import dbConnect from "@/lib/db";
 import BOQ from "@/models/contruction/BOQ";
@@ -727,6 +728,7 @@ import * as XLSX from "xlsx";
 import stringSimilarity from "string-similarity";
 import { batchCorrectItemsWithClaude } from "@/lib/claudeCorrect";
 import mongoose from "mongoose";
+import Counter from "@/models/Counter";
 export const maxDuration = 60;
 
 function isAuthorized(user) {
@@ -791,6 +793,306 @@ function canonicalizeText(str) {
     .trim();
 }
 
+// ─── Detect the new "Finished Good + Sub BOQ" workbook format ───
+function isFinishedGoodHeaderRow(row) {
+  const c2 = clean(row?.[2]).toLowerCase();
+  return c2.includes("finished good") || c2.includes("package description");
+}
+
+function isSubBoqHeaderRow(row) {
+  const c0 = clean(row?.[0]).toLowerCase();
+  return c0.includes("parent") && c0.includes("link");
+}
+
+function isSectionHeaderRow(srNo, desc) {
+  return /^\d+$/.test(clean(srNo)) && /^section\s/i.test(clean(desc));
+}
+
+// ─── Parse Sheet1 in the new Finished-Good format ───
+function parseFinishedGoodSheet(rows) {
+  const headerIdx = rows.findIndex(isFinishedGoodHeaderRow);
+  if (headerIdx === -1) return null; // not this format
+
+  const parents = [];
+  let currentParent = null;
+
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row) continue;
+
+    const srNo = clean(row[0]);
+    const itemCode = clean(row[1]);
+    const description = clean(row[2]);
+    const qty = clean(row[3]);
+    const unit = clean(row[4]) || "nos";
+    const rateSupply = number(row[5]);
+    const rateInstall = number(row[6]);
+
+    if (!srNo && !description) continue;
+    if (isTotalRow(srNo) || isTotalRow(description)) continue;
+
+    if (isSectionHeaderRow(srNo, description)) {
+      currentParent = {
+        itemSerialNo: srNo,
+        itemName: description.replace(/^section\s*\d+\s*-\s*/i, "").trim(),
+        section: description,
+        subSection: "Main",
+        subSectionIndex: 1,
+        sectionSpecification: "",
+        descriptions: [],
+      };
+      parents.push(currentParent);
+      continue;
+    }
+
+    if (!currentParent || !itemCode) continue;
+
+    currentParent.descriptions.push({
+      srNo,                 // e.g. "1000.1" — this IS the Sub BOQ Parent Link key
+      itemCode,              // e.g. "FG-SUB-001"
+      description,
+      unit,
+      quantity: number(qty) || 0,
+      unitRateSupply: rateSupply,
+      unitRateInstallation: rateInstall,
+      isRateOnly: false,
+    });
+  }
+
+  return parents.filter((p) => p.descriptions.length > 0);
+}
+
+// ─── Parse the Sub BOQ sheet into a flat, parent-linked row list ───
+function parseSubBoqSheet(rows) {
+  const headerIdx = rows.findIndex(isSubBoqHeaderRow);
+  if (headerIdx === -1) return [];
+
+  let subBoqRows = [];
+  let fgSheetName = "";
+  let subSheetName = "";
+  let subSheetRows = null;
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row) continue;
+
+    const parentLink = clean(row[0]);
+    const componentCode = clean(row[1]);
+    const classificationRaw = clean(row[2]);
+    const description = clean(row[3]);
+    const uom = clean(row[4]) || "nos";
+    const qtyPerUnit = number(row[5]);
+    const costRate = number(row[6]);
+    const sourcingChannel = clean(row[7]);
+
+    if (!parentLink || !componentCode) continue;
+
+    subBoqRows.push({
+      parentLink,
+      componentCode,
+      classification: classificationRaw.toLowerCase().includes("sub-assembly")
+        ? "Sub-Assembly (FG)"
+        : "Raw Material",
+      description,
+      uom,
+      qtyPerUnit,
+      costRate,
+      sourcingChannel,
+    });
+  }
+  return subBoqRows;
+}
+
+// Paste this block into the BOQ import route, below parseSubBoqSheet().
+// It reuses helpers already in that file: clean, isTotalRow,
+// isFinishedGoodHeaderRow, isSubBoqHeaderRow, isSectionHeaderRow.
+
+// ─── Validate the Finished-Good sheet ↔ Sub BOQ sheet linkage ───
+const STRICT_NUM = /^[-+]?\d+(\.\d+)?$/;
+const numericOrBlank = (v) => {
+  const s = clean(v).replace(/,/g, "");
+  return s === "" || STRICT_NUM.test(s);
+};
+const toNum = (v) => parseFloat(clean(v).replace(/,/g, "")) || 0;
+
+function validateFinishedGoodWorkbook({ fgRows, fgSheetName, subRows, subSheetName }) {
+  const errors = [];
+  const warnings = [];
+  const addError = (sheet, rows, message) =>
+    errors.push({ sheet, rows: [].concat(rows), message });
+  const addWarning = (sheet, rows, message) =>
+    warnings.push({ sheet, rows: [].concat(rows), message });
+
+  // ── 1. Finished-Good sheet: build the set of valid Parent Item Link keys ──
+  const fgKeys = new Map();      // Sr. No. -> excel row
+  const fgItemCodes = new Map(); // Item Code -> excel row
+  const fgHeaderIdx = fgRows.findIndex(isFinishedGoodHeaderRow);
+
+  for (let i = fgHeaderIdx + 1; i < fgRows.length; i++) {
+    const row = fgRows[i];
+    if (!row) continue;
+    const rowNo = i + 1;
+    const srNo = clean(row[0]);
+    const itemCode = clean(row[1]);
+    const description = clean(row[2]);
+
+    if (!srNo && !itemCode && !description) continue;
+    if (isTotalRow(srNo) || isTotalRow(description)) continue;
+
+    if (isSectionHeaderRow(srNo, description)) {
+      if (clean(row[3])) {
+        addWarning(fgSheetName, rowNo,
+          `Section ${srNo} has extra text in the Qty column ("${clean(row[3])}"). The section title was probably split by a comma.`);
+      }
+      continue;
+    }
+
+    if (!srNo) {
+      addError(fgSheetName, rowNo, `Item "${itemCode || description}" has no Sr. No. (it is needed as the Sub BOQ link).`);
+      continue;
+    }
+    if (!itemCode) {
+      addError(fgSheetName, rowNo, `Sr. No. ${srNo} has no Item Code.`);
+    }
+
+    if (fgKeys.has(srNo)) {
+      addError(fgSheetName, rowNo, `Sr. No. ${srNo} is duplicated (already used on row ${fgKeys.get(srNo)}).`);
+    } else {
+      fgKeys.set(srNo, rowNo);
+    }
+    if (itemCode) {
+      if (fgItemCodes.has(itemCode)) {
+        addError(fgSheetName, rowNo, `Item Code ${itemCode} is duplicated (already used on row ${fgItemCodes.get(itemCode)}).`);
+      } else {
+        fgItemCodes.set(itemCode, rowNo);
+      }
+    }
+
+    // Numeric sanity: catches shifted columns (e.g. a stray comma splitting the description)
+    const problems = [];
+    if (!numericOrBlank(row[3])) problems.push(`Qty "${clean(row[3])}" is not a number`);
+    else if (toNum(row[3]) <= 0) problems.push("Qty is missing or zero");
+    if (!numericOrBlank(row[5])) problems.push(`Unit Rate Supply "${clean(row[5])}" is not a number`);
+    if (!numericOrBlank(row[6])) problems.push(`Unit Rate Install "${clean(row[6])}" is not a number`);
+    if (problems.length) {
+      addError(fgSheetName, rowNo,
+        `Sr. No. ${srNo}${itemCode ? ` (${itemCode})` : ""}: ${problems.join("; ")}. Check this row for a stray comma or shifted cells.`);
+    }
+  }
+
+  // ── 2. Sub BOQ sheet ──
+  const subHeaderIdx = subRows.findIndex(isSubBoqHeaderRow);
+  const subLines = [];
+  const componentCodes = new Map(); // Component Code -> excel row
+
+  for (let i = subHeaderIdx + 1; i < subRows.length; i++) {
+    const row = subRows[i];
+    if (!row) continue;
+    const rowNo = i + 1;
+    const parentLink = clean(row[0]);
+    const componentCode = clean(row[1]);
+    const description = clean(row[3]);
+    if (!parentLink && !componentCode && !description) continue;
+
+    if (!parentLink) {
+      addError(subSheetName, rowNo, `Parent Item Link is blank for component "${componentCode || description}".`);
+      continue;
+    }
+    if (!componentCode) {
+      addError(subSheetName, rowNo, `Component Code is blank (parent ${parentLink}).`);
+      continue;
+    }
+
+    if (componentCodes.has(componentCode)) {
+      addError(subSheetName, rowNo, `Component Code ${componentCode} is duplicated (already used on row ${componentCodes.get(componentCode)}).`);
+    } else {
+      componentCodes.set(componentCode, rowNo);
+    }
+
+    const problems = [];
+    if (!numericOrBlank(row[5]) || toNum(row[5]) <= 0) problems.push(`Qty per Unit "${clean(row[5])}" must be a number greater than 0`);
+    if (!numericOrBlank(row[6])) problems.push(`Cost Rate "${clean(row[6])}" is not a number`);
+    if (problems.length) addError(subSheetName, rowNo, `${componentCode}: ${problems.join("; ")}.`);
+
+    subLines.push({
+      rowNo,
+      parentLink,
+      componentCode,
+      isAssembly: clean(row[2]).toLowerCase().includes("sub-assembly"),
+    });
+  }
+
+  // ── 3. The main check: every Parent Item Link must exist in the Finished-Good sheet
+  //       (or be a Sub-Assembly defined in the Sub BOQ sheet itself) ──
+  const assemblyCodes = new Set(subLines.filter((l) => l.isAssembly).map((l) => l.componentCode));
+
+  const missingParents = new Map(); // parentLink -> [excel rows]
+  for (const line of subLines) {
+    if (!fgKeys.has(line.parentLink) && !assemblyCodes.has(line.parentLink)) {
+      if (!missingParents.has(line.parentLink)) missingParents.set(line.parentLink, []);
+      missingParents.get(line.parentLink).push(line.rowNo);
+    }
+  }
+  for (const [link, rows] of missingParents) {
+    addError(
+      subSheetName,
+      rows,
+      `Parent item "${link}" is missing in ${fgSheetName}. ${rows.length} Sub BOQ component${rows.length > 1 ? "s" : ""} in ${subSheetName} reference it. Add this item to ${fgSheetName} or correct the Parent Item Link.`
+    );
+  }
+
+  // ── 4. Sub-Assemblies that can't be traced back to any Finished-Good line ──
+  const reachable = new Set(fgKeys.keys());
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const l of subLines) {
+      if (l.isAssembly && reachable.has(l.parentLink) && !reachable.has(l.componentCode)) {
+        reachable.add(l.componentCode);
+        grew = true;
+      }
+    }
+  }
+  for (const l of subLines) {
+    if (assemblyCodes.has(l.parentLink) && !fgKeys.has(l.parentLink) && !reachable.has(l.parentLink)) {
+      addError(subSheetName, l.rowNo,
+        `${l.componentCode} sits under Sub-Assembly "${l.parentLink}", which is not linked to any item in ${fgSheetName}.`);
+    }
+  }
+
+  // ── 5. Warnings (non-blocking) ──
+  const parentsWithChildren = new Set(subLines.map((l) => l.parentLink));
+  for (const l of subLines) {
+    if (l.isAssembly && reachable.has(l.componentCode) && !parentsWithChildren.has(l.componentCode)) {
+      addWarning(subSheetName, l.rowNo, `Sub-Assembly ${l.componentCode} has no components listed under it.`);
+    }
+  }
+
+  return { errors, warnings };
+}
+
+// ─── Recursively collect EVERY descendant of a Sheet1 finished-good line ───
+// (its direct children, plus children of any Sub-Assembly child, etc.)
+function collectSubBoqTreeForItem(rootCode, subBoqRows) {
+  const result = [];
+  const queue = [rootCode];
+  const visited = new Set();
+
+  while (queue.length) {
+    const parentCode = queue.shift();
+    if (visited.has(parentCode)) continue;
+    visited.add(parentCode);
+
+    const children = subBoqRows.filter((r) => r.parentLink === parentCode);
+    for (const child of children) {
+      result.push(child);
+      if (child.classification === "Sub-Assembly (FG)") {
+        queue.push(child.componentCode);
+      }
+    }
+  }
+  return result;
+}
+
 function isParentItemNumber(value) {
   return /^\d+00$/.test(clean(value));
 }
@@ -844,19 +1146,11 @@ function parseExcelRows(rows, startRow) {
 
     const hasRates = unitRateSupply > 0 || unitRateInstallation > 0;
     const hasQty = rawQtyStr !== "" && !isNaN(parseFloat(rawQtyStr));
-    // const isRateOnly =
-    //   rawQtyStr.toUpperCase() === "RATE ONLY" ||
-    //   rawAmountCol6.toUpperCase() === "RATE ONLY" ||
-    //   (!hasQty && hasRates);
 
-    // const quantity = isRateOnly ? 0 : number(rawQtyStr);
-
-    // Only treat as Rate Only if the cell explicitly says "RATE ONLY"
     const isRateOnly =
       rawQtyStr.toUpperCase() === "RATE ONLY" ||
       rawAmountCol6.toUpperCase() === "RATE ONLY";
 
-    // If quantity is missing but rates exist, default qty to 1
     const quantity = isRateOnly
       ? 0
       : (hasQty ? number(rawQtyStr) : (hasRates ? 1 : 0));
@@ -899,7 +1193,6 @@ function parseExcelRows(rows, startRow) {
     }
 
     // ── OPTION 2: Skip empty scope/header lines (e.g. 1002, 1101) ──
-    // If it has no billable quantity, no supply/install rates, and is not rate-only, ignore it
     if (!hasQty && !hasRates && !isRateOnly) {
       continue;
     }
@@ -925,6 +1218,7 @@ function parseExcelRows(rows, startRow) {
 
   return parents.filter((p) => p.descriptions.length > 0);
 }
+
 async function getNextItemCode(companyId) {
   const lastItem = await Item.findOne({
     companyId,
@@ -938,6 +1232,53 @@ async function getNextItemCode(companyId) {
   const num = parseInt(lastItem.itemCode.replace("ITEM-", ""), 10) || 0;
   return `ITEM-${String(num + 1).padStart(5, "0")}`;
 }
+
+// Makes sure the counter for this company is at least as high as the
+// highest existing ITEM-XXXXX code already in the DB. Only does real work
+// the first time it's called for a company — after that, the counter
+// document exists and this is a single cheap indexed lookup.
+async function ensureItemCounterSeeded(companyId) {
+  const existing = await Counter.findOne({ companyId, id: "ItemCode" }).lean();
+  if (existing) return; // already seeded — nothing to do
+
+  const items = await Item.find({
+    companyId,
+    itemCode: { $regex: /^ITEM-\d+$/ },
+  })
+    .select("itemCode")
+    .lean();
+
+  let maxNum = 0;
+  for (const it of items) {
+    const n = parseInt(it.itemCode.replace("ITEM-", ""), 10) || 0;
+    if (n > maxNum) maxNum = n;
+  }
+
+  await Counter.updateOne(
+    { companyId, id: "ItemCode" },
+    { $max: { seq: maxNum } },
+    { upsert: true }
+  );
+}
+
+async function reserveItemCodes(companyId, count) {
+  if (count <= 0) return [];
+  await ensureItemCounterSeeded(companyId);
+
+  const updated = await Counter.findOneAndUpdate(
+    { companyId, id: "ItemCode" },
+    { $inc: { seq: count } },
+    { upsert: true, new: true }
+  );
+  const endNum = updated.seq;
+  const startNum = endNum - count + 1;
+  const codes = [];
+  for (let n = startNum; n <= endNum; n++) {
+    codes.push(`ITEM-${String(n).padStart(5, "0")}`);
+  }
+  return codes;
+}
+
 function isFooterMarker(value) {
   const text = clean(value).toUpperCase();
   if (!text) return false;
@@ -965,7 +1306,7 @@ export async function POST(req) {
     if (contentType.includes("application/json")) {
       const { projectId, contractorId, customerId, phase, mappedParents } = await req.json();
 
-      if ( !Array.isArray(mappedParents) || mappedParents.length === 0) {
+      if (!Array.isArray(mappedParents) || mappedParents.length === 0) {
         return NextResponse.json(
           { success: false, message: "Missing project ID or items." },
           { status: 400 }
@@ -975,30 +1316,19 @@ export async function POST(req) {
       const existingItems = await Item.find({ companyId: targetCompanyId }).lean();
       const rawMaterialMap = new Map();
       const productMap = new Map();
+      const assemblyMap = new Map();
 
       for (const it of existingItems) {
         const key = canonicalizeText(it.itemName);
         if (it.itemType === "Raw Material") {
           rawMaterialMap.set(key, it);
+        } else if (it.itemType === "Assembly") {
+          assemblyMap.set(key, it);
         } else {
           productMap.set(key, it);
         }
       }
 
-      // ── Get the starting item-code number ONCE instead of once per item ──
-      const lastItem = await Item.findOne({
-        companyId: targetCompanyId,
-        itemCode: { $regex: /^ITEM-\d+$/ },
-      })
-        .sort({ createdAt: -1 })
-        .select("itemCode")
-        .lean();
-      let nextCodeNum = lastItem?.itemCode
-        ? (parseInt(lastItem.itemCode.replace("ITEM-", ""), 10) || 0) + 1
-        : 1;
-      const nextItemCode = () => `ITEM-${String(nextCodeNum++).padStart(5, "0")}`;
-
-      // ── Collect writes here instead of awaiting each one ──
       const newItemDocs = [];   // plain objects → Item.insertMany at the end
       const bulkUpdates = [];   // ops → Item.bulkWrite at the end
 
@@ -1021,12 +1351,56 @@ export async function POST(req) {
 
           const isBillable = isBillableChildLine(desc);
 
+          // ── Resolve this line's Sub BOQ components (sub-assemblies + raw
+          // materials pulled from the Sub BOQ sheet) into the flat
+          // materials[] shape the BOQ schema expects ──
+          const resolvedMaterials = [];
+          for (const node of desc.subBoqComponents || []) {
+            const normKey = canonicalizeText(node.description);
+            const targetMap = node.classification === "Sub-Assembly (FG)" ? assemblyMap : rawMaterialMap;
+
+            let matDoc = node.selectedMasterId
+              ? existingItems.find((m) => String(m._id) === String(node.selectedMasterId))
+              : targetMap.get(normKey);
+
+            if (!matDoc) {
+              matDoc = {
+                _id: new mongoose.Types.ObjectId(),
+                companyId: targetCompanyId,
+                createdBy: user.id,
+                itemCode: null,
+                itemName: node.description,
+                description: node.description,
+                itemType: node.classification === "Sub-Assembly (FG)" ? "Assembly" : "Raw Material",
+                unit: node.uom,
+                uom: node.uom,
+                unitPrice: node.costRate,
+                status: "active",
+                active: true,
+              };
+              newItemDocs.push(matDoc);
+              targetMap.set(normKey, matDoc);
+            }
+
+            resolvedMaterials.push({
+              rawMaterialId: matDoc._id,
+              rawMaterialName: matDoc.itemName,
+              quantityPerUnit: node.qtyPerUnit,
+              uom: node.uom,
+              unitRate: node.costRate,
+              componentCode: node.componentCode,
+              parentLink: node.parentLink,
+              classification: node.classification,
+              sourcingChannel: node.sourcingChannel,
+            });
+          }
+
           if (!isBillable) {
             resolvedBOQDescriptions.push({
               itemId: null,
               srNo: desc.srNo || "",
               description: descText,
-              unit: "—",
+              unit: desc.unit || "nos",
               quantity: 0,
               unitRateSupply: 0,
               unitRateInstallation: 0,
@@ -1036,6 +1410,7 @@ export async function POST(req) {
               amount: 0,
               isRateOnly: false,
               isHeader: true,
+              materials: resolvedMaterials, // in case a header line still has Sub BOQ components attached
             });
             continue;
           }
@@ -1078,12 +1453,11 @@ export async function POST(req) {
           }
 
           if (!rawMaterialDoc) {
-            // ── NEW raw material: build the object, don't save yet ──
             const newRawMat = {
               _id: new mongoose.Types.ObjectId(),
               companyId: targetCompanyId,
               createdBy: user.id,
-              itemCode: nextItemCode(),
+              itemCode: null,
               serialNumber: desc.srNo || "",
               itemName: descText,
               description: descText,
@@ -1107,7 +1481,6 @@ export async function POST(req) {
             rawMaterialDoc = newRawMat;
             rawMaterialMap.set(normDescKey, newRawMat);
           } else {
-            // ── EXISTING raw material: queue the update, don't await yet ──
             const updatedFields = {
               category: cleanCategory,
               unitRateSupply: supplyRate,
@@ -1124,7 +1497,6 @@ export async function POST(req) {
             bulkUpdates.push({
               updateOne: { filter: { _id: rawMaterialDoc._id }, update: { $set: updatedFields } },
             });
-            // keep the in-memory copy consistent for anything referencing it later in this same request
             Object.assign(rawMaterialDoc, updatedFields);
           }
 
@@ -1157,6 +1529,7 @@ export async function POST(req) {
             amount: totalAmt,
             isRateOnly,
             isHeader: false,
+            materials: resolvedMaterials,
           });
         }
 
@@ -1192,7 +1565,7 @@ export async function POST(req) {
             _id: new mongoose.Types.ObjectId(),
             companyId: targetCompanyId,
             createdBy: user.id,
-            itemCode: nextItemCode(),
+            itemCode: null,
             serialNumber: parent.itemSerialNo || "",
             itemName: cleanParentName,
             description: parent.sectionSpecification || cleanParentName,
@@ -1227,8 +1600,13 @@ export async function POST(req) {
         });
       }
 
-      // ── Fire the two bulk DB calls, once, instead of hundreds of small ones ──
-      if (newItemDocs.length) await Item.insertMany(newItemDocs);
+      if (newItemDocs.length) {
+        const codes = await reserveItemCodes(targetCompanyId, newItemDocs.length);
+        newItemDocs.forEach((doc, i) => {
+          doc.itemCode = codes[i];
+        });
+        await Item.insertMany(newItemDocs);
+      }
       if (bulkUpdates.length) await Item.bulkWrite(bulkUpdates);
 
       const count = await BOQ.countDocuments({ companyId: targetCompanyId });
@@ -1236,7 +1614,6 @@ export async function POST(req) {
 
       const boq = new BOQ({
         companyId: targetCompanyId,
-        // project: projectId,
         contractor: contractorId || null,
         customer: customerId || null,
         boqNumber,
@@ -1265,58 +1642,106 @@ export async function POST(req) {
     // ─────────────────────────────────────────────────────────────────────────
     const formData = await req.formData();
     const file = formData.get("file");
-    // const projectId = formData.get("projectId");
 
-    if (!file)
-    // !projectId) 
-    {
+    if (!file) {
       return NextResponse.json({ success: false, message: "File  required." }, { status: 400 });
     }
-
-    // const buffer = await file.arrayBuffer();
-    // const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
-    // const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    // const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: true });
 
     const buffer = await file.arrayBuffer();
     const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
 
-    let sheet = null;
+    const allSheetRows = {};
+    for (const name of workbook.SheetNames) {
+      allSheetRows[name] = XLSX.utils.sheet_to_json(workbook.Sheets[name], {
+        header: 1,
+        defval: "",
+        raw: true,
+      });
+    }
 
-    // 1. Prefer a sheet explicitly named like "BOQ-PHASE..."
-    for (const sheetName of workbook.SheetNames) {
-      if (sheetName.toUpperCase().includes("BOQ")) {
-        sheet = workbook.Sheets[sheetName];
+    let sheet = null;
+    let sheetRows = null;
+    let isNewFormat = false;
+    let subBoqRows = [];
+    let fgSheetName = "";
+    let subSheetName = "";
+    let subSheetRows = null;
+    // 1. Prefer a sheet explicitly named "BOQ..."
+    for (const name of workbook.SheetNames) {
+      if (name.toUpperCase().includes("BOQ")) {
+        sheet = workbook.Sheets[name];
+        sheetRows = allSheetRows[name];
         break;
       }
     }
 
-    // 2. Fallback: scan every sheet for one containing "SR. NO." + "ITEM DESCRIPTION" headers
+    // 2. Scan for old-format headers ("SR. NO." / "ITEM DESCRIPTION")
     if (!sheet) {
-      for (const sheetName of workbook.SheetNames) {
-        const candidate = workbook.Sheets[sheetName];
-        const candidateRows = XLSX.utils.sheet_to_json(candidate, { header: 1, defval: "" });
-        const found = candidateRows.slice(0, 30).some(
+      for (const name of workbook.SheetNames) {
+        const rows = allSheetRows[name];
+        const found = rows.slice(0, 30).some(
           (row) =>
             clean(row?.[0]).toUpperCase() === "SR. NO." &&
             clean(row?.[1]).toUpperCase() === "ITEM DESCRIPTION"
         );
         if (found) {
-          sheet = candidate;
+          sheet = workbook.Sheets[name];
+          sheetRows = rows;
           break;
         }
       }
     }
 
-    // 3. Last resort: fall back to the first sheet (old behavior)
+    // 3. Scan for the new Finished-Good format
     if (!sheet) {
-      sheet = workbook.Sheets[workbook.SheetNames[0]];
+      for (const name of workbook.SheetNames) {
+        const rows = allSheetRows[name];
+        if (rows.slice(0, 10).some(isFinishedGoodHeaderRow)) {
+          sheet = workbook.Sheets[name];
+          sheetRows = rows;
+          isNewFormat = true;
+          fgSheetName = name;
+          break;
+        }
+      }
     }
 
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: true });
+    // 4. Last resort: first sheet
+    if (!sheet) {
+      sheet = workbook.Sheets[workbook.SheetNames[0]];
+      sheetRows = allSheetRows[workbook.SheetNames[0]];
+    }
 
-    const headerRow = findHeaderRow(rows);
-    const parents = parseExcelRows(rows, headerRow);
+    const rows = sheetRows;
+
+    // If new format, look for a Sub BOQ sheet among the OTHER sheets
+    if (isNewFormat) {
+      for (const name of workbook.SheetNames) {
+        const candidateRows = allSheetRows[name];
+        if (candidateRows.slice(0, 10).some(isSubBoqHeaderRow)) {
+          subBoqRows = parseSubBoqSheet(candidateRows);
+          subSheetName = name;
+          subSheetRows = candidateRows;
+          break;
+        }
+      }
+    }
+
+    const headerRow = isNewFormat ? rows.findIndex(isFinishedGoodHeaderRow) : findHeaderRow(rows);
+    const parents = isNewFormat ? parseFinishedGoodSheet(rows) : parseExcelRows(rows, headerRow);
+
+    let importErrors = [];
+    let importWarnings = [];
+    if (isNewFormat && subSheetRows) {
+      const result = validateFinishedGoodWorkbook({
+        fgRows: rows,
+        fgSheetName,
+        subRows: subSheetRows,
+        subSheetName,
+      });
+      importErrors = result.errors;
+      importWarnings = result.warnings;
+    }
 
     console.log("🔍 Total raw rows in sheet:", rows.length);
     console.log("🔍 Parsed parents count:", parents.length);
@@ -1343,33 +1768,15 @@ export async function POST(req) {
       });
     });
 
-    // const aiResults = [];
-    // const CHUNK_SIZE = 15;
-    // for (let i = 0; i < aiPayload.length; i += CHUNK_SIZE) {
-    //   const chunk = aiPayload.slice(i, i + CHUNK_SIZE);
-    //   try {
-    //     const cleaned = await batchCorrectItemsWithClaude(
-    //       targetCompanyId,
-    //       chunk,
-    //       allMasterItems.map((m) => m.itemName).filter(Boolean)
-    //     );
-    //     aiResults.push(...cleaned);
-    //   } catch (err) {
-    //     console.error("AI clean batch error:", err);
-    //   }
-    // }
-
     const aiResults = [];
     const CHUNK_SIZE = 15;
-    const CONCURRENCY = 5; // how many chunks run at once — tune based on your rate limits
+    const CONCURRENCY = 5;
 
-    // Split payload into chunks first
     const chunks = [];
     for (let i = 0; i < aiPayload.length; i += CHUNK_SIZE) {
       chunks.push(aiPayload.slice(i, i + CHUNK_SIZE));
     }
 
-    // Process chunks in parallel batches of CONCURRENCY
     for (let i = 0; i < chunks.length; i += CONCURRENCY) {
       const batch = chunks.slice(i, i + CONCURRENCY);
       const batchResults = await Promise.allSettled(
@@ -1387,7 +1794,6 @@ export async function POST(req) {
           aiResults.push(...result.value);
         } else {
           console.error("AI clean batch error:", result.reason);
-          // that chunk's items just won't have AI suggestions — parsing still continues
         }
       }
     }
@@ -1407,7 +1813,6 @@ export async function POST(req) {
 
       if (parentHasAiChange) totalAiSuggestionsCount++;
 
-      // ── MATCH CHILD LINES ONLY AGAINST RAW MATERIALS ──
       const analyzedDescriptions = (parent.descriptions || []).map((desc, dIdx) => {
         const isBillable = isBillableChildLine(desc);
         const childAiClean = aiMap.get(`desc-${pIdx}-${dIdx}`);
@@ -1419,7 +1824,32 @@ export async function POST(req) {
 
         if (childHasAiChange) totalAiSuggestionsCount++;
 
-        // If it's an empty header row like 1002, do NOT try to match it to master Raw Materials
+        // ── Match this line's Sub BOQ components (sub-assemblies / raw
+        // materials from the Sub BOQ sheet) against the Item Master ──
+        const matchedSubBoqComponents = (desc.subBoqComponents || []).map((node) => {
+          const normNode = canonicalizeText(node.description);
+          const pool = node.classification === "Sub-Assembly (FG)"
+            ? allMasterItems.filter((i) => i.itemType === "Assembly")
+            : masterRawMaterials;
+
+          let best = null;
+          let highest = 0;
+          for (const candidate of pool) {
+            const score = stringSimilarity.compareTwoStrings(normNode, canonicalizeText(candidate.itemName));
+            if (score > highest) { highest = score; best = candidate; }
+          }
+          const matchPercent = Math.round(highest * 100);
+          const isMatched = matchPercent >= 85 && best !== null;
+
+          return {
+            ...node,
+            matchedMasterItem: isMatched ? best : null,
+            matchScore: isMatched ? matchPercent : 0,
+            action: isMatched ? "merge" : "create_new",
+            selectedMasterId: isMatched ? best._id : null,
+          };
+        });
+
         if (!isBillable) {
           return {
             ...desc,
@@ -1436,6 +1866,7 @@ export async function POST(req) {
             action: "ignore",
             selectedMasterId: null,
             isScopeHeader: true,
+            subBoqComponents: matchedSubBoqComponents,
           };
         }
 
@@ -1476,10 +1907,10 @@ export async function POST(req) {
           action: matchPercent >= 85 ? "merge" : "create_new",
           selectedMasterId: matchPercent >= 85 && bestRawMat ? bestRawMat._id : null,
           isScopeHeader: false,
+          subBoqComponents: matchedSubBoqComponents,
         };
       });
 
-      // ── MATCH PARENT ITEM ONLY AGAINST FINISHED GOODS / PRODUCTS ──
       const normParentSuggested = canonicalizeText(suggestedParentName);
       const normParentOriginal = canonicalizeText(rawParentName);
 
@@ -1526,6 +1957,8 @@ export async function POST(req) {
         itemsSuggested: totalAiSuggestionsCount,
         itemsNew: analyzedItems.filter((i) => i.status === "not_in_master").length,
         items: analyzedItems,
+        validationErrors: importErrors,
+        warnings: importWarnings,
       },
     });
   } catch (err) {

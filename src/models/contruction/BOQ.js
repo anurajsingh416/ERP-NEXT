@@ -396,28 +396,21 @@ const BOQLineMaterialSchema = new mongoose.Schema(
       ref: "Item",
       required: true,
     },
-    rawMaterialName: {
+    rawMaterialName: { type: String, trim: true, default: "" },
+    quantityPerUnit: { type: Number, default: 1 },
+    uom: { type: String, trim: true, default: "nos" },
+    unitRate: { type: Number, default: 0 },
+    notes: { type: String, trim: true },
+
+    // ── NEW: hierarchy fields for multi-tier BOM (Sheet2) ──
+    componentCode: { type: String, trim: true, default: "" },   // e.g. "SUB-1000.1-A", "RM-VCB-01"
+    parentLink: { type: String, trim: true, default: "" },      // e.g. "1000.1" or "SUB-1000.1-A"
+    classification: {
       type: String,
-      trim: true,
-      default: "",
+      enum: ["Raw Material", "Sub-Assembly (FG)"],
+      default: "Raw Material",
     },
-    quantityPerUnit: {
-      type: Number,
-      default: 1,
-    },
-    uom: {
-      type: String,
-      trim: true,
-      default: "nos",
-    },
-    unitRate: {
-      type: Number,
-      default: 0,
-    },
-    notes: {
-      type: String,
-      trim: true,
-    },
+    sourcingChannel: { type: String, trim: true, default: "" },
   },
   { _id: true }
 );
@@ -527,6 +520,11 @@ const BOQItemSchema = new mongoose.Schema(
 
     // Excel parent number: 1000, 1100, 1800, etc.
     itemSerialNo: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    itemCode: {
       type: String,
       trim: true,
       default: "",
