@@ -1730,6 +1730,15 @@ export async function POST(req) {
     const headerRow = isNewFormat ? rows.findIndex(isFinishedGoodHeaderRow) : findHeaderRow(rows);
     const parents = isNewFormat ? parseFinishedGoodSheet(rows) : parseExcelRows(rows, headerRow);
 
+    // ── Attach Sub BOQ tree to each finished-good line (key = Sr. No.) ──
+    if (isNewFormat && subBoqRows.length) {
+      for (const parent of parents) {
+        for (const desc of parent.descriptions || []) {
+          desc.subBoqComponents = collectSubBoqTreeForItem(desc.srNo, subBoqRows);
+        }
+      }
+    }
+
     let importErrors = [];
     let importWarnings = [];
     if (isNewFormat && subSheetRows) {
